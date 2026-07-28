@@ -88,6 +88,18 @@ export const buildOutreachQueue = createServerFn({ method: "POST" })
       (existing ?? []).map((r) => `${r.lead_id}::${(r.recipient_email ?? "").toLowerCase()}`),
     );
 
+    // Recipients already known to be bounced / complained / unsubscribed never
+    // get a new draft. The platform blocks them at send time too.
+    const { isDeliverableAddress } = await import("./suppression.server");
+    const { data: suppressedRows } = await supabase
+      .from("outreach_emails")
+      .select("recipient_email")
+      .eq("status", "suppressed");
+    const suppressedEmails = new Set(
+      (suppressedRows ?? []).map((r) => (r.recipient_email ?? "").trim().toLowerCase()),
+    );
+
+
     type InsertRow = {
       user_id: string;
       run_id: string;
