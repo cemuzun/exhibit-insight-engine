@@ -216,6 +216,7 @@ function RunDetail() {
 
             <div className="flex rounded-md border border-border bg-card p-1 text-xs">
               <button onClick={() => setMode("dashboard")} className={`rounded px-3 py-1.5 ${mode === "dashboard" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}>Dashboard</button>
+              <button onClick={() => setMode("exhibitors")} className={`rounded px-3 py-1.5 ${mode === "exhibitors" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}>Exhibitors</button>
               <button onClick={() => setMode("report")} className={`rounded px-3 py-1.5 ${mode === "report" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}>Report</button>
             </div>
           </div>
