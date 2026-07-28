@@ -493,6 +493,7 @@ Limitations: ${limitations.slice(0, 10).join(" | ")}`;
     // fall back to computed
   }
 
+  await finishSteps();
   await admin
     .from("research_runs")
     .update({
@@ -501,6 +502,7 @@ Limitations: ${limitations.slice(0, 10).join(" | ")}`;
       progress_message: "Done",
       executive_summary: execSummary,
       limitations,
+      step_log: stepLog,
       completed_at: new Date().toISOString(),
     })
     .eq("id", runId);
