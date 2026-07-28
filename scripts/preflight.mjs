@@ -157,8 +157,19 @@ if (packageOk && envOk) {
       console.log(`  ✓ ${pad(e.name, 28)} ${e.description}`);
     }
   }
+
+  // ---- Database schema check --------------------------------------------
+  const skipSchema =
+    skipEnv || flags.includes("--no-schema") || process.env.PREFLIGHT_SKIP_SCHEMA === "1";
+  if (!skipSchema) {
+    const { checkSchema, reportSchema } = await import("./check-schema.mjs");
+    const schemaOk = reportSchema(await checkSchema());
+    if (!schemaOk) process.exit(1);
+  }
+
   process.exit(0);
 }
+
 
 if (!packageOk) {
   if (pinProblems.length > 0) {
