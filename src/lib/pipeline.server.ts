@@ -536,14 +536,35 @@ function looksLikeExhibitorContent(markdown: string): boolean {
   return hits >= 3;
 }
 
+/** Common exhibitor-directory paths to try when a site exposes no obvious link. */
+const EXHIBITOR_PATH_GUESSES = [
+  "/exhibitors",
+  "/exhibitor-list",
+  "/exhibitor-directory",
+  "/exhibitors/exhibitor-list",
+  "/attend/exhibitor-list",
+  "/show/exhibitor-list",
+];
+
+function guessExhibitorUrls(officialUrl: string): string[] {
+  try {
+    const base = new URL(officialUrl);
+    return EXHIBITOR_PATH_GUESSES.map((p) => new URL(p, `${base.protocol}//${base.host}`).toString());
+  } catch {
+    return [];
+  }
+}
+
 /**
- * Event homepages almost never list exhibitors. Follow links that look like an
- * exhibitor directory, and fall back to a web search, before giving up.
+ * Event homepages almost never list exhibitors. Collect several plausible
+ * exhibitor-directory sources (links, guessed paths, web search) so the caller
+ * can try the next one when extraction yields nothing.
  */
-async function findExhibitorListSource(
+async function findExhibitorSources(
   officialUrl: string,
   eventName: string,
-): Promise<{ url: string; markdown: string } | null> {
+  max = 3,
+): Promise<Array<{ url: string; markdown: string }>> {
   // Each scrape can take up to 90s; chained together a single dead event site
   // could eat the whole run. Give the hunt one overall budget and move on.
   const budgetMs = Number(process.env.EXHIBITOR_SOURCE_BUDGET_MS ?? 150_000);
@@ -553,29 +574,33 @@ async function findExhibitorListSource(
   const home = await firecrawlScrape(officialUrl, { formats: ["markdown", "links"] }).catch(() => null);
 
   const candidates: string[] = [];
-  for (const link of home?.links ?? []) {
-    if (EXHIBITOR_LINK_RE.test(link)) candidates.push(link);
-    if (candidates.length >= 3) break;
-  }
+  const push = (u?: string | null) => {
+    if (u && !candidates.includes(u)) candidates.push(u);
+  };
 
-  if (candidates.length === 0 && !outOfTime()) {
+  for (const link of home?.links ?? []) if (EXHIBITOR_LINK_RE.test(link)) push(link);
+  for (const g of guessExhibitorUrls(officialUrl)) push(g);
+
+  if (!outOfTime()) {
     const results = await firecrawlSearch(`${eventName} exhibitor list directory`, { limit: 3 }).catch(
       () => [] as Array<{ url: string }>,
     );
-    for (const r of results) if (r.url) candidates.push(r.url);
+    for (const r of results) push(r.url);
   }
 
-  for (const url of candidates.slice(0, 3)) {
-    if (outOfTime()) break;
+  const found: Array<{ url: string; markdown: string }> = [];
+  for (const url of candidates.slice(0, 8)) {
+    if (outOfTime() || found.length >= max) break;
     const page = await firecrawlScrape(url, { formats: ["markdown"] }).catch(() => null);
     const md = page?.markdown ?? "";
-    if (looksLikeExhibitorContent(md)) return { url, markdown: md };
+    if (looksLikeExhibitorContent(md)) found.push({ url, markdown: md });
   }
 
   const homeMd = home?.markdown ?? "";
-  if (looksLikeExhibitorContent(homeMd)) return { url: officialUrl, markdown: homeMd };
-  return null;
+  if (found.length === 0 && looksLikeExhibitorContent(homeMd)) found.push({ url: officialUrl, markdown: homeMd });
+  return found;
 }
+
 
 export async function runPipeline(
   runId: string,
@@ -1071,55 +1096,84 @@ ${sourceLinks.slice(0, 80).join("\n")}`,
     await progress("extract_exhibitors", `Extracting exhibitors from ${ev.event_name}`);
 
 
-    let exhibitorSource = sourceMarkdown;
-    let exhibitorSourceUrl = input.inputUrl;
+    let sources: Array<{ url: string; markdown: string }> = [
+      { url: input.inputUrl, markdown: sourceMarkdown },
+    ];
 
     if (eventList.is_directory && ev.official_url) {
       try {
-        const found = await withHeartbeat(
+        sources = await withHeartbeat(
           "extract_exhibitors",
           `Looking for the exhibitor list of ${ev.event_name}`,
-          () => findExhibitorListSource(ev.official_url, ev.event_name),
+          () => findExhibitorSources(ev.official_url, ev.event_name),
         );
-        if (!found) {
+        if (sources.length === 0) {
           limitations.push(
             `No public exhibitor list found for ${ev.event_name} — event site did not expose an exhibitor directory.`,
           );
+          await pushScoringEntry({
+            at: new Date().toISOString(),
+            company: "—",
+            show: ev.event_name,
+            status: "skipped",
+            reason: "Skipped — no public exhibitor list found on the event site",
+          });
+          await bumpCounters({ deep_dive_done: counters.deep_dive_done + 1 });
           continue;
         }
-        exhibitorSource = found.markdown;
-        exhibitorSourceUrl = found.url;
       } catch (e) {
         limitations.push(`Could not scrape ${ev.event_name}: ${(e as Error).message}`);
+        await bumpCounters({ deep_dive_done: counters.deep_dive_done + 1 });
         continue;
       }
     }
 
-    const exhibitorPrompt = `${CORE_SYSTEM}
+    // Try each candidate source until one actually yields exhibitors.
+    let exhibitors: import("zod").infer<typeof ExhibitorListSchema>["exhibitors"] = [];
+    for (const src of sources) {
+      const exhibitorPrompt = `${CORE_SYSTEM}
 
 TASK: Extract EXHIBITING COMPANIES from the source below for event "${ev.event_name}". Return up to ${maxLeads * 2} candidates. Skip associations, government bodies, media partners, sponsors that aren't exhibitors, universities, and service vendors that are not the trade show's own exhibitors. Normalize company names (strip Inc./LLC/etc for normalized_company_name).
 
-Source URL: ${exhibitorSourceUrl}
+Source URL: ${src.url}
 
 --- SOURCE MARKDOWN ---
-${exhibitorSource.slice(0, 30000)}`;
+${src.markdown.slice(0, 30000)}`;
 
-    let exhibitorList: import("zod").infer<typeof ExhibitorListSchema>;
-    try {
-      exhibitorList = await withHeartbeat("extract_exhibitors", `Extracting exhibitors from ${ev.event_name}`, () =>
-        generateStructured(extractModel, ExhibitorListSchema, exhibitorPrompt),
-      );
-      if (exhibitorList.extraction_complete === false) {
-        limitations.push(`Exhibitor list for ${ev.event_name} is partial.`);
+      try {
+        const exhibitorList = await withHeartbeat(
+          "extract_exhibitors",
+          `Extracting exhibitors from ${ev.event_name} (${new URL(src.url).hostname})`,
+          () => generateStructured(extractModel, ExhibitorListSchema, exhibitorPrompt),
+        );
+        if (exhibitorList.extraction_complete === false) {
+          limitations.push(`Exhibitor list for ${ev.event_name} is partial.`);
+        }
+        limitations.push(...(exhibitorList.limitations ?? []));
+        if (exhibitorList.exhibitors.length > 0) {
+          exhibitors = exhibitorList.exhibitors.slice(0, maxLeads);
+          break;
+        }
+      } catch (e) {
+        limitations.push(`Exhibitor extraction failed for ${ev.event_name}: ${(e as Error).message}`);
       }
-      limitations.push(...(exhibitorList.limitations ?? []));
-    } catch (e) {
-      limitations.push(`Exhibitor extraction failed for ${ev.event_name}: ${(e as Error).message}`);
+    }
+
+    if (exhibitors.length === 0) {
+      limitations.push(`No exhibitors could be extracted for ${ev.event_name}.`);
+      await pushScoringEntry({
+        at: new Date().toISOString(),
+        company: "—",
+        show: ev.event_name,
+        status: "skipped",
+        reason: `Skipped — no exhibitors extractable from ${sources.length} candidate page(s)`,
+      });
+      await bumpCounters({ deep_dive_done: counters.deep_dive_done + 1 });
       continue;
     }
 
-    const exhibitors = exhibitorList.exhibitors.slice(0, maxLeads);
     await bumpCounters({ exhibitors_found: counters.exhibitors_found + exhibitors.length });
+
 
     let completed = 0;
 
