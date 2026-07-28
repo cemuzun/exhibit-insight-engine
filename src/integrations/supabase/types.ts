@@ -14,6 +14,51 @@ export type Database = {
   }
   public: {
     Tables: {
+      email_templates: {
+        Row: {
+          body_template: string
+          created_at: string
+          id: string
+          industry: string | null
+          is_default: boolean
+          min_evidence_level: string
+          min_lead_score: number
+          name: string
+          subject_template: string
+          trade_show: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          body_template?: string
+          created_at?: string
+          id?: string
+          industry?: string | null
+          is_default?: boolean
+          min_evidence_level?: string
+          min_lead_score?: number
+          name: string
+          subject_template?: string
+          trade_show?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          body_template?: string
+          created_at?: string
+          id?: string
+          industry?: string | null
+          is_default?: boolean
+          min_evidence_level?: string
+          min_lead_score?: number
+          name?: string
+          subject_template?: string
+          trade_show?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       events: {
         Row: {
           city: string | null
