@@ -26,7 +26,7 @@ function NewRun() {
     minLeadTimeDays: 45,
     startDateFrom: "",
     startDateTo: "",
-    maxEvents: 2000,
+    maxEvents: 5000,
     maxDirectoryPages: 25,
     pageReuseHours: 24,
     maxDeepDiveShows: 12,
