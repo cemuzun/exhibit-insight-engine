@@ -630,6 +630,28 @@ function guessExhibitorUrls(officialUrl: string): string[] {
 }
 
 
+/** Per-show extraction diagnostics surfaced in the run debug panel. */
+export type ShowDebugEntry = {
+  show: string;
+  official_url: string | null;
+  candidates: number;
+  accepted: string[];
+  rejected: Array<{ url: string; reason: string }>;
+  pages: Array<{ url: string; added: number }>;
+  exhibitors: number;
+  skip_reason: string | null;
+};
+
+/** Per-show diagnostics captured while hunting for exhibitor sources. */
+export type SourceDiag = {
+  /** Every URL that was considered as a possible exhibitor list. */
+  candidates: number;
+  /** URLs dropped before or after scraping, with the reason. */
+  rejected: Array<{ url: string; reason: string }>;
+  /** URLs accepted as exhibitor listing pages. */
+  accepted: string[];
+};
+
 /**
  * Event homepages almost never list exhibitors, and "exhibitor resources"
  * pages list none either. Collect ranked candidates from the site itself,
@@ -640,7 +662,9 @@ async function findExhibitorSources(
   officialUrl: string,
   eventName: string,
   max = 12,
+  diag?: SourceDiag,
 ): Promise<Array<{ url: string; markdown: string }>> {
+
   // max <= 0 means "collect every exhibitor page we can find" for this show.
   const exhaustive = max <= 0;
   const limit = exhaustive ? Number.POSITIVE_INFINITY : max;
@@ -707,8 +731,19 @@ async function findExhibitorSources(
     }
   }
 
-  const ranked = candidates
-    .map((url) => ({ url, score: scoreCandidate(url) + (searchHits.has(url) ? 1 : 0) }))
+  const scoredCandidates = candidates.map((url) => ({
+    url,
+    score: scoreCandidate(url) + (searchHits.has(url) ? 1 : 0),
+  }));
+  if (diag) {
+    diag.candidates = scoredCandidates.length;
+    for (const c of scoredCandidates) {
+      if (c.score <= 0 && diag.rejected.length < 60) {
+        diag.rejected.push({ url: c.url, reason: "URL filtered — no exhibitor-list signal in the link" });
+      }
+    }
+  }
+  const ranked = scoredCandidates
     .filter((c) => c.score > 0)
     .sort((a, b) => b.score - a.score)
     .map((c) => c.url);
@@ -718,10 +753,23 @@ async function findExhibitorSources(
   const found: Array<{ url: string; markdown: string }> = [];
   const seenFound = new Set<string>();
   const addFound = (url: string, markdown: string) => {
-    if (seenFound.has(url) || !looksLikeExhibitorContent(markdown)) return;
+    if (seenFound.has(url)) return;
+    if (!looksLikeExhibitorContent(markdown)) {
+      if (diag && diag.rejected.length < 60) {
+        diag.rejected.push({
+          url,
+          reason: markdown
+            ? "Scraped but content did not look like an exhibitor list"
+            : "Page could not be scraped (blocked, empty or timed out)",
+        });
+      }
+      return;
+    }
     seenFound.add(url);
+    if (diag) diag.accepted.push(url);
     found.push({ url, markdown: trimToListing(markdown) });
   };
+
 
   // Reruns often already have useful MapYourShow detail pages cached from an
   // interrupted attempt. Use them immediately instead of waiting on the listing
@@ -918,6 +966,9 @@ export async function runPipeline(
     pages_reused: 0,
     pages_fetched: 0,
     scoring_feed: [] as ScoringFeedEntry[],
+    /** Per-show extraction diagnostics shown in the run debug panel. */
+    show_debug: [] as ShowDebugEntry[],
+
   };
   const bumpCounters = async (patch: Partial<typeof counters>) => {
     Object.assign(counters, patch);
@@ -1344,6 +1395,25 @@ ${sourceLinks.slice(0, 80).join("\n")}`,
   for (const ev of topEvents) {
     await progress("extract_exhibitors", `Extracting exhibitors from ${ev.event_name}`);
 
+    const diag: SourceDiag = { candidates: 0, rejected: [], accepted: [] };
+    const debugEntry: ShowDebugEntry = {
+      show: ev.event_name,
+      official_url: ev.official_url ?? null,
+      candidates: 0,
+      accepted: [],
+      rejected: [],
+      pages: [],
+      exhibitors: 0,
+      skip_reason: null,
+    };
+    const saveDebug = async () => {
+      debugEntry.candidates = diag.candidates;
+      debugEntry.accepted = diag.accepted.slice(0, 25);
+      debugEntry.rejected = diag.rejected.slice(0, 25);
+      const rest = counters.show_debug.filter((d) => d.show !== debugEntry.show);
+      counters.show_debug = [debugEntry, ...rest].slice(0, 60);
+      await bumpCounters({ show_debug: counters.show_debug });
+    };
 
     let sources: Array<{ url: string; markdown: string }> = [
       { url: input.inputUrl, markdown: sourceMarkdown },
@@ -1359,6 +1429,7 @@ ${sourceLinks.slice(0, 80).join("\n")}`,
               ev.official_url,
               ev.event_name,
               unlimitedLeads ? 0 : Math.max(requestedLeads, 12),
+              diag,
             ),
         );
         if (sources.length === 0) {
@@ -1372,15 +1443,22 @@ ${sourceLinks.slice(0, 80).join("\n")}`,
             status: "skipped",
             reason: "Skipped — no public exhibitor list found on the event site",
           });
+          debugEntry.skip_reason = "No public exhibitor list found on the event site";
+          await saveDebug();
           await bumpCounters({ deep_dive_done: counters.deep_dive_done + 1 });
           continue;
         }
       } catch (e) {
         limitations.push(`Could not scrape ${ev.event_name}: ${(e as Error).message}`);
+        debugEntry.skip_reason = `Scrape failed — ${(e as Error).message}`;
+        await saveDebug();
         await bumpCounters({ deep_dive_done: counters.deep_dive_done + 1 });
         continue;
       }
     }
+    await saveDebug();
+
+
 
     // Try each candidate source until enough exhibitors are found. Detail pages
     // produce one company each, while listing pages can produce many.
@@ -1407,6 +1485,8 @@ ${sourceLinks.slice(0, 80).join("\n")}`,
       } catch {
         // keep the raw string
       }
+      if (debugEntry.pages.length < 40) debugEntry.pages.push({ url: sourceUrl, added });
+      debugEntry.exhibitors += added;
       await bumpCounters({
         exhibitor_pages_parsed: counters.exhibitor_pages_parsed + 1,
         exhibitor_pages_with_hits: counters.exhibitor_pages_with_hits + (added > 0 ? 1 : 0),
@@ -1415,7 +1495,9 @@ ${sourceLinks.slice(0, 80).join("\n")}`,
           ? { last_exhibitor_at: new Date().toISOString(), last_exhibitor_source: host }
           : {}),
       });
+      await saveDebug();
     };
+
 
     for (const src of sources) {
       const deterministic = parseExhibitorsFromMarkdown(src.markdown, src.url, extractBatch);
@@ -1473,9 +1555,12 @@ ${src.markdown.slice(0, 60000)}`;
         status: "skipped",
         reason: `Skipped — no exhibitors extractable from ${sources.length} candidate page(s)`,
       });
+      debugEntry.skip_reason = `No exhibitors extractable from ${sources.length} candidate page(s)`;
+      await saveDebug();
       await bumpCounters({ deep_dive_done: counters.deep_dive_done + 1 });
       continue;
     }
+
 
     let completed = 0;
 
