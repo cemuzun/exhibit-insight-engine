@@ -170,7 +170,17 @@ export function ExhibitorsTable({
         >
           Export CSV
         </button>
-        <div className="ml-auto text-xs text-muted-foreground">
+        <div className="ml-auto flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+          {inProgress && (
+            <span className="inline-flex items-center gap-1.5 rounded border border-success/30 bg-success/10 px-2 py-1 text-[11px] text-success">
+              <span className="relative flex h-1.5 w-1.5">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-75" />
+                <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-success" />
+              </span>
+              Live
+              {lastUpdated && <span className="text-success/80">· updated {ago(lastUpdated, now)}</span>}
+            </span>
+          )}
           <span className="font-mono text-foreground">{totalShown}</span> exhibitors ·{" "}
           <span className="font-mono text-foreground">{totalBooths}</span> with booth ·{" "}
           <span className="font-mono text-foreground">{groups.length}</span> shows
