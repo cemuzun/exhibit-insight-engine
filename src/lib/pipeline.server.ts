@@ -781,6 +781,14 @@ ${sourceLinks.slice(0, 80).join("\n")}`,
   const tooSoon = dated.filter((d) => d.leadDays !== null && d.leadDays < minLeadDays);
   const eligible = dated.filter((d) => d.leadDays === null || d.leadDays >= minLeadDays).map((d) => d.event);
 
+  await bumpCounters({
+    discovered: eventList.events.length,
+    filtered_too_soon: tooSoon.length,
+    eligible: eligible.length,
+  });
+
+
+
   if (tooSoon.length > 0) {
     limitations.push(
       `Skipped ${tooSoon.length} show(s) starting in under ${minLeadDays} days (or already past): ${tooSoon
