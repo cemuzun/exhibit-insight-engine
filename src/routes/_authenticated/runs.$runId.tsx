@@ -1,9 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { getRun, rerunResearch } from "@/lib/research.functions";
+import { getRun, rerunResearch, resumeStalledRun } from "@/lib/research.functions";
 import { syncRunToCrm } from "@/lib/crm.functions";
 import { CrmSyncPreview } from "@/components/CrmSyncPreview";
 import { RunProgress, RunTimings, type StepEntry, type RunCounters } from "@/components/RunProgress";
@@ -83,6 +83,7 @@ function RunDetail() {
   const [mode, setMode] = useState<"dashboard" | "report">("dashboard");
   const [selected, setSelected] = useState<Lead | null>(null);
   const [filters, setFilters] = useState<ResultFilterState>(DEFAULT_FILTERS);
+  const resume = useServerFn(resumeStalledRun);
 
   const queryClient = useQueryClient();
   const { data, isLoading } = useQuery({
@@ -93,6 +94,31 @@ function RunDetail() {
       return s === "complete" || s === "failed" ? false : 3000;
     },
   });
+
+  // A run executes inside one server request; if that process is recycled the
+  // pipeline stops silently. When the heartbeat goes quiet, ask the server to
+  // pick the run back up instead of letting it sit until the stall guard fires.
+  const runStatus = data?.run?.status;
+  const runUpdatedAt = data?.run?.updated_at;
+  const resumeAttempted = useRef<string | null>(null);
+  useEffect(() => {
+    if (!runUpdatedAt || runStatus === "complete" || runStatus === "failed") return;
+    const check = () => {
+      const quietMs = Date.now() - new Date(runUpdatedAt).getTime();
+      if (quietMs < 100_000) return;
+      if (resumeAttempted.current === runUpdatedAt) return;
+      resumeAttempted.current = runUpdatedAt;
+      resume({ data: { runId } })
+        .then((r) => {
+          if (r && "resumed" in r && r.resumed) toast.info("Run was interrupted — restarted automatically.");
+        })
+        .catch(() => {})
+        .finally(() => queryClient.invalidateQueries({ queryKey: ["run", runId] }));
+    };
+    check();
+    const t = setInterval(check, 15_000);
+    return () => clearInterval(t);
+  }, [runId, runStatus, runUpdatedAt, resume, queryClient]);
 
   // Live push updates for step-by-step progress and for results as they land.
   useEffect(() => {
