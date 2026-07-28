@@ -1645,8 +1645,11 @@ ${sourceLinks.slice(0, 80).join("\n")}`,
   const requestedLeads = input.filters.maxLeadsPerShow ?? 10;
   const unlimitedLeads = requestedLeads <= 0;
   const maxLeads = unlimitedLeads ? Number.POSITIVE_INFINITY : requestedLeads;
-  /** Per-page extraction batch size (the model needs a finite number). */
+  /** Per-page extraction batch size for the model (it needs a finite number). */
   const extractBatch = unlimitedLeads ? 200 : requestedLeads * 2;
+  /** Deterministic parsing is cheap, so never throttle it to the model's batch. */
+  const parseBatch = unlimitedLeads ? 5000 : Math.max(requestedLeads * 2, 50);
+
 
   // 0 (or unset via 0) means "deep-dive every show we kept" — no cap.
   const requestedDeepDive = input.filters.maxDeepDiveShows ?? (eventList.is_directory ? 12 : 1);
@@ -1704,7 +1707,11 @@ ${sourceLinks.slice(0, 80).join("\n")}`,
               diag,
             ),
         );
-        if (sources.length === 0) {
+        const hasDirectoryApi = [ev.official_url, ...diag.accepted, ...diag.rejected.map((r) => r.url)].some(
+          (u) => typeof u === "string" && isMapYourShowUrl(u),
+        );
+        if (sources.length === 0 && !hasDirectoryApi) {
+
           limitations.push(
             `No public exhibitor list found for ${ev.event_name} — event site did not expose an exhibitor directory.`,
           );
@@ -1888,9 +1895,13 @@ ${sourceLinks.slice(0, 80).join("\n")}`,
 
     // MapYourShow directories (IMTS, PACK EXPO, …) render nothing server-side.
     // Pull the full A–Z list from the same JSON endpoint their SPA uses.
-    const mysUrl = [ev.official_url, ...sources.map((s) => s.url)].find(
-      (u): u is string => typeof u === "string" && isMapYourShowUrl(u),
-    );
+    const mysUrl = [
+      ev.official_url,
+      ...sources.map((s) => s.url),
+      ...diag.accepted,
+      ...diag.rejected.map((r) => r.url),
+    ].find((u): u is string => typeof u === "string" && isMapYourShowUrl(u));
+
     if (mysUrl) {
       try {
         const mys = await withHeartbeat(
@@ -1919,7 +1930,7 @@ ${sourceLinks.slice(0, 80).join("\n")}`,
     for (const src of exhibitors.length >= maxLeads ? [] : sources) {
       if (src.markdown.startsWith("# Exhibitor directory (")) continue;
 
-      const deterministic = parseExhibitorsFromMarkdown(src.markdown, src.url, extractBatch);
+      const deterministic = parseExhibitorsFromMarkdown(src.markdown, src.url, parseBatch);
       if (deterministic.length > 0) {
         const added = addCandidateExhibitors(deterministic, src, /\.pdf($|\?)/i.test(src.url) ? "PDF" : "HTML");
         await recordPageParsed(src.url, added);

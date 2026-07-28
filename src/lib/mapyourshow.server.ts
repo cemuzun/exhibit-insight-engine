@@ -15,18 +15,16 @@ const UA =
 export function mapYourShowBase(url: string): string | null {
   try {
     const u = new URL(url);
-    const m = /\/(\d+_\d+)\//.exec(u.pathname);
-    const version = m?.[1];
+    // MapYourShow installs always live under a versioned app root such as
+    // "/8_0/", on mapyourshow.com or on the show's own directory subdomain.
+    const version = /\/(\d+_\d+)(\/|$)/.exec(u.pathname)?.[1];
     if (!version) return null;
-    if (!/mapyourshow\.com$/i.test(u.hostname) && !/^\/\d+_\d+\/(explore|exhibitor|floorplan|search)/i.test(u.pathname)) {
-      // Custom-domain MapYourShow installs still use the /8_0/<section>/ layout.
-      return null;
-    }
     return `${u.origin}/${version}`;
   } catch {
     return null;
   }
 }
+
 
 export function isMapYourShowUrl(url: string): boolean {
   return mapYourShowBase(url) !== null;
