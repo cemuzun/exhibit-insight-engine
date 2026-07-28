@@ -630,6 +630,16 @@ function guessExhibitorUrls(officialUrl: string): string[] {
 }
 
 
+/** Per-show diagnostics captured while hunting for exhibitor sources. */
+export type SourceDiag = {
+  /** Every URL that was considered as a possible exhibitor list. */
+  candidates: number;
+  /** URLs dropped before or after scraping, with the reason. */
+  rejected: Array<{ url: string; reason: string }>;
+  /** URLs accepted as exhibitor listing pages. */
+  accepted: string[];
+};
+
 /**
  * Event homepages almost never list exhibitors, and "exhibitor resources"
  * pages list none either. Collect ranked candidates from the site itself,
@@ -640,7 +650,9 @@ async function findExhibitorSources(
   officialUrl: string,
   eventName: string,
   max = 12,
+  diag?: SourceDiag,
 ): Promise<Array<{ url: string; markdown: string }>> {
+
   // max <= 0 means "collect every exhibitor page we can find" for this show.
   const exhaustive = max <= 0;
   const limit = exhaustive ? Number.POSITIVE_INFINITY : max;
