@@ -119,13 +119,14 @@ export async function fetchMapYourShowExhibitors(
   url: string,
   opts?: { max?: number; concurrency?: number },
 ): Promise<MapYourShowResult | null> {
-  const base = mapYourShowBase(url);
+  const base = mapYourShowBase(url) ?? (await discoverMapYourShowBase(url));
   if (!base) return null;
 
   const max = opts?.max && opts.max > 0 ? opts.max : 100_000;
   const concurrency = opts?.concurrency ?? 4;
-  const letters = await alphaChars(base);
-  if (letters.length === 0) return null;
+  const discovered = await alphaChars(base);
+  const letters = discovered.length > 0 ? discovered : DEFAULT_ALPHA;
+
 
   const hits: Hit[] = [];
   for (let i = 0; i < letters.length; i += concurrency) {
