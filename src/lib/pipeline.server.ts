@@ -5,7 +5,7 @@ import { firecrawlMap, firecrawlScrape, firecrawlSearch } from "./firecrawl.serv
 import { recentCachedScrapesForHost } from "./firecrawl-cache.server";
 import { isLikelyCompanyName, normalizedCompanyKey, parseExhibitorsFromMarkdown } from "./exhibitor-parser";
 import { validateExhibitorRow } from "./exhibitor-validation";
-import { fetchMapYourShowExhibitors, isMapYourShowUrl } from "./mapyourshow.server";
+import { discoverMapYourShowBase, fetchMapYourShowExhibitors, isMapYourShowUrl } from "./mapyourshow.server";
 
 
 import {
