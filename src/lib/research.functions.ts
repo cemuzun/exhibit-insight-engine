@@ -8,7 +8,7 @@ const CreateInput = z.object({
   inputSourceType: z.enum(["directory", "event", "exhibitor_list"]).default("directory"),
   targetMarket: z.string().max(200).nullable().optional(),
   minProjectValue: z.number().int().min(0).max(10_000_000).nullable().optional(),
-  maxLeadsPerShow: z.number().int().min(1).max(30).default(10),
+  maxLeadsPerShow: z.number().int().min(0).max(2000).default(0),
   startDateFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullish(),
   startDateTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullish(),
   maxEvents: z.number().int().min(1).max(5000).default(5000),
