@@ -113,6 +113,7 @@ function RunDetail() {
         </div>
         {!inProgress && (
           <div className="flex items-center gap-3">
+            <RerunButton runId={runId} />
             <CrmSyncPreview runId={runId} disabled={typedLeads.length === 0} />
             <CrmSyncButton runId={runId} disabled={typedLeads.length === 0} />
 
