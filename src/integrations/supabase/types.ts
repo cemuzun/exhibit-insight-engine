@@ -387,6 +387,84 @@ export type Database = {
           },
         ]
       }
+      outreach_emails: {
+        Row: {
+          body: string
+          company_name: string
+          created_at: string
+          error: string | null
+          id: string
+          lead_id: string
+          lead_score: number
+          priority_tier: string | null
+          recipient_email: string
+          recipient_name: string | null
+          recipient_title: string | null
+          run_id: string
+          sent_at: string | null
+          status: string
+          subject: string
+          template_name: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          body?: string
+          company_name: string
+          created_at?: string
+          error?: string | null
+          id?: string
+          lead_id: string
+          lead_score?: number
+          priority_tier?: string | null
+          recipient_email: string
+          recipient_name?: string | null
+          recipient_title?: string | null
+          run_id: string
+          sent_at?: string | null
+          status?: string
+          subject?: string
+          template_name?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          body?: string
+          company_name?: string
+          created_at?: string
+          error?: string | null
+          id?: string
+          lead_id?: string
+          lead_score?: number
+          priority_tier?: string | null
+          recipient_email?: string
+          recipient_name?: string | null
+          recipient_title?: string | null
+          run_id?: string
+          sent_at?: string | null
+          status?: string
+          subject?: string
+          template_name?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "outreach_emails_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "outreach_emails_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "research_runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           created_at: string

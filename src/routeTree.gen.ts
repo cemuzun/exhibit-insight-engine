@@ -17,6 +17,7 @@ import { Route as AuthenticatedDigestsRouteImport } from './routes/_authenticate
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
 import { Route as AuthenticatedRunsNewRouteImport } from './routes/_authenticated/runs.new'
 import { Route as AuthenticatedRunsRunIdRouteImport } from './routes/_authenticated/runs.$runId'
+import { Route as AuthenticatedOutreachRunIdRouteImport } from './routes/_authenticated/outreach.$runId'
 
 const AuthRoute = AuthRouteImport.update({
   id: '/auth',
@@ -57,6 +58,12 @@ const AuthenticatedRunsRunIdRoute = AuthenticatedRunsRunIdRouteImport.update({
   path: '/runs/$runId',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedOutreachRunIdRoute =
+  AuthenticatedOutreachRunIdRouteImport.update({
+    id: '/outreach/$runId',
+    path: '/outreach/$runId',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -64,6 +71,7 @@ export interface FileRoutesByFullPath {
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/digests': typeof AuthenticatedDigestsRoute
   '/templates': typeof AuthenticatedTemplatesRoute
+  '/outreach/$runId': typeof AuthenticatedOutreachRunIdRoute
   '/runs/$runId': typeof AuthenticatedRunsRunIdRoute
   '/runs/new': typeof AuthenticatedRunsNewRoute
 }
@@ -73,6 +81,7 @@ export interface FileRoutesByTo {
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/digests': typeof AuthenticatedDigestsRoute
   '/templates': typeof AuthenticatedTemplatesRoute
+  '/outreach/$runId': typeof AuthenticatedOutreachRunIdRoute
   '/runs/$runId': typeof AuthenticatedRunsRunIdRoute
   '/runs/new': typeof AuthenticatedRunsNewRoute
 }
@@ -84,6 +93,7 @@ export interface FileRoutesById {
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
   '/_authenticated/digests': typeof AuthenticatedDigestsRoute
   '/_authenticated/templates': typeof AuthenticatedTemplatesRoute
+  '/_authenticated/outreach/$runId': typeof AuthenticatedOutreachRunIdRoute
   '/_authenticated/runs/$runId': typeof AuthenticatedRunsRunIdRoute
   '/_authenticated/runs/new': typeof AuthenticatedRunsNewRoute
 }
@@ -95,6 +105,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/digests'
     | '/templates'
+    | '/outreach/$runId'
     | '/runs/$runId'
     | '/runs/new'
   fileRoutesByTo: FileRoutesByTo
@@ -104,6 +115,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/digests'
     | '/templates'
+    | '/outreach/$runId'
     | '/runs/$runId'
     | '/runs/new'
   id:
@@ -114,6 +126,7 @@ export interface FileRouteTypes {
     | '/_authenticated/dashboard'
     | '/_authenticated/digests'
     | '/_authenticated/templates'
+    | '/_authenticated/outreach/$runId'
     | '/_authenticated/runs/$runId'
     | '/_authenticated/runs/new'
   fileRoutesById: FileRoutesById
@@ -182,6 +195,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedRunsRunIdRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/outreach/$runId': {
+      id: '/_authenticated/outreach/$runId'
+      path: '/outreach/$runId'
+      fullPath: '/outreach/$runId'
+      preLoaderRoute: typeof AuthenticatedOutreachRunIdRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
   }
 }
 
@@ -189,6 +209,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
   AuthenticatedDigestsRoute: typeof AuthenticatedDigestsRoute
   AuthenticatedTemplatesRoute: typeof AuthenticatedTemplatesRoute
+  AuthenticatedOutreachRunIdRoute: typeof AuthenticatedOutreachRunIdRoute
   AuthenticatedRunsRunIdRoute: typeof AuthenticatedRunsRunIdRoute
   AuthenticatedRunsNewRoute: typeof AuthenticatedRunsNewRoute
 }
@@ -197,6 +218,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
   AuthenticatedDigestsRoute: AuthenticatedDigestsRoute,
   AuthenticatedTemplatesRoute: AuthenticatedTemplatesRoute,
+  AuthenticatedOutreachRunIdRoute: AuthenticatedOutreachRunIdRoute,
   AuthenticatedRunsRunIdRoute: AuthenticatedRunsRunIdRoute,
   AuthenticatedRunsNewRoute: AuthenticatedRunsNewRoute,
 }

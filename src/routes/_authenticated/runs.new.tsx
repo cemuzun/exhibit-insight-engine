@@ -194,13 +194,13 @@ function NewRun() {
               className="w-full rounded-md border border-border bg-input px-3 py-2 text-sm font-mono"
             />
           </Field>
-          <Field label="Shows deep-dived" hint="Shows we chase exhibitors + leads for (up to 25). Each adds minutes.">
+          <Field label="Shows deep-dived" hint="Shows we chase exhibitors + leads for. 0 = every show found (can take hours).">
             <input
               type="number"
-              min={1}
-              max={25}
+              min={0}
+              max={5000}
               value={form.maxDeepDiveShows}
-              onChange={(e) => setForm({ ...form, maxDeepDiveShows: parseInt(e.target.value || "12") })}
+              onChange={(e) => setForm({ ...form, maxDeepDiveShows: parseInt(e.target.value || "0") })}
               className="w-full rounded-md border border-border bg-input px-3 py-2 text-sm font-mono"
             />
           </Field>
