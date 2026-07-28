@@ -38,7 +38,7 @@ const NON_EXHIBITOR_SECTION_RE =
 const EXHIBITOR_SECTION_RE =
   /\b(exhibitors?|exhibit(ing|ors)? (list|hall|directory|companies)|booth|stand no|stand number|floor ?plan|showcase|vendors? (hall|list)|expo hall)\b/i;
 
-const SENTENCE_RE = /[.!?]\s+\S/;
+const SENTENCE_RE = /[.!?]\s+[a-z]/;
 
 function nearestHeadingBefore(markdown: string, index: number): string | null {
   const before = markdown.slice(0, index);
