@@ -2,11 +2,15 @@ import type { ExhibitorRecord } from "./pipeline-schemas";
 
 export function cleanCompanyName(value: string): string {
   return value
+    .replace(/!?\[([^\]]*)\]\((?:[^)\s]*)(?:\s+"[^"]*")?\)/g, "$1") // markdown links → label
+    .replace(/<[^>]+>/g, " ") // stray html tags
     .replace(/\s+/g, " ")
     .replace(/\s+logo$/i, "")
     .replace(/^[-–—•\s]+/, "")
+    .replace(/[-–—•\s]+$/, "")
     .trim();
 }
+
 
 export function normalizedCompanyKey(value: string): string {
   return cleanCompanyName(value)
