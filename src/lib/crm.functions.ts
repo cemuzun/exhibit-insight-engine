@@ -51,6 +51,10 @@ export const syncRunToCrm = createServerFn({ method: "POST" })
     let skipped = 0;
     let failed = 0;
 
+    // In-run dedupe caches so the same domain/email is only pushed once.
+    const domainCache = new Map<string, string>();
+    const emailCache = new Map<string, string>();
+
     for (const lead of qualified) {
       try {
         const domain = domainFromUrl(lead.company_website);
@@ -64,7 +68,7 @@ export const syncRunToCrm = createServerFn({ method: "POST" })
           continue;
         }
 
-        let companyId = await findCompanyByDomain(domain);
+        let companyId = domainCache.get(domain) ?? (await findCompanyByDomain(domain));
         let companyExisted = true;
         if (!companyId) {
           companyExisted = false;
@@ -77,6 +81,7 @@ export const syncRunToCrm = createServerFn({ method: "POST" })
           companyId = await createCompany(props);
           companiesCreated++;
         }
+        domainCache.set(domain, companyId);
 
         const dms = (lead.decision_makers ?? []) as DecisionMaker[];
         const contactIds: string[] = [];
@@ -85,12 +90,14 @@ export const syncRunToCrm = createServerFn({ method: "POST" })
           // Verified fields only: needs a valid, evidence-backed business email.
           if (!isValidEmail(email) || !isVerified(dm.evidence_status)) continue;
 
-          const existing = await findContactByEmail(email);
+          const existing = emailCache.get(email) ?? (await findContactByEmail(email));
           if (existing) {
             skipped++;
+            emailCache.set(email, existing);
             contactIds.push(existing);
             continue;
           }
+
           const props: Record<string, string> = { email };
           if (dm.name) {
             const parts = dm.name.trim().split(/\s+/);
