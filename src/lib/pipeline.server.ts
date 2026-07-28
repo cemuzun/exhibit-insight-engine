@@ -860,11 +860,13 @@ ${sourceLinks.slice(0, 80).join("\n")}`,
     );
   }
 
+  await bumpCounters({ kept: eventsInDb.length, deep_dive_total: topEvents.length });
 
   const allLeads: Array<{ lead: LeadRecord; eventId: string; eventName: string; eventDate: string | null; boothNumber: string | null }> = [];
 
   for (const ev of topEvents) {
     await progress("extract_exhibitors", `Extracting exhibitors from ${ev.event_name}`);
+
 
     let exhibitorSource = sourceMarkdown;
     let exhibitorSourceUrl = input.inputUrl;
