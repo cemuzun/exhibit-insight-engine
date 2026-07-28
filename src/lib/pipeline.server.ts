@@ -1056,6 +1056,12 @@ TASK:
         }
         await bumpCounters({ leads_scored: counters.leads_scored + 1 });
         await pushScoringEntry(explainLeadScore(row));
+        if (row.lead_score >= 65) {
+          const before = qualifiedCount;
+          qualifiedCount += 1;
+          await announceMilestone(before, qualifiedCount);
+        }
+
 
       } catch (e) {
         limitations.push(`Could not analyze ${ex.company_name}: ${(e as Error).message}`);
