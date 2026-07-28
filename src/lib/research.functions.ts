@@ -164,10 +164,91 @@ export const rerunResearch = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+/**
+ * A run executes inside one long-lived server request. If that server process is
+ * recycled mid-run the pipeline just stops — no error, no further progress. This
+ * restarts a run whose heartbeat has gone quiet; cached scrapes make the replay
+ * cheap. Capped so a genuinely broken run still fails instead of looping.
+ */
+const RESUME_AFTER_MS = 100 * 1000;
+const MAX_RESUMES = 3;
 
+export const resumeStalledRun = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) => z.object({ runId: z.string().uuid() }).parse(input))
+  .handler(async ({ data, context }) => {
+    const { data: run, error } = await context.supabase
+      .from("research_runs")
+      .select("*")
+      .eq("id", data.runId)
+      .maybeSingle();
+    if (error || !run) return { resumed: false, reason: "not_found" as const };
+    if (run.status === "complete" || run.status === "failed") {
+      return { resumed: false, reason: "finished" as const };
+    }
+    const quietFor = Date.now() - new Date(run.updated_at as string).getTime();
+    if (quietFor < RESUME_AFTER_MS) return { resumed: false, reason: "still_working" as const };
+
+    const counters = (run.counters ?? {}) as Record<string, number>;
+    const resumes = Number(counters.resumes ?? 0);
+
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    if (resumes >= MAX_RESUMES) {
+      const message =
+        "Run kept stopping after restarts — the source is likely too large or the scrape provider is rate limiting. Try fewer directory pages or fewer deep-dive shows.";
+      await supabaseAdmin
+        .from("research_runs")
+        .update({ status: "failed", error_message: message })
+        .eq("id", data.runId);
+      const { notifyRunFailure } = await import("./notifications.server");
+      await notifyRunFailure(supabaseAdmin, {
+        runId: data.runId,
+        userId: context.userId,
+        errorMessage: message,
+      });
+      return { resumed: false, reason: "gave_up" as const };
+    }
+
+    await supabaseAdmin
+      .from("research_runs")
+      .update({
+        counters: { ...counters, resumes: resumes + 1 },
+        progress_message: `Restarting after an interrupted step (attempt ${resumes + 2})`,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", data.runId);
+
+    const { runPipeline } = await import("./pipeline.server");
+    try {
+      await runPipeline(
+        data.runId,
+        {
+          inputUrl: run.input_url,
+          targetMarket: run.target_market,
+          filters: (run.filters ?? {}) as Record<string, unknown>,
+        },
+        supabaseAdmin,
+      );
+    } catch (e) {
+      await supabaseAdmin
+        .from("research_runs")
+        .update({ status: "failed", error_message: (e as Error).message })
+        .eq("id", data.runId);
+      const { notifyRunFailure } = await import("./notifications.server");
+      await notifyRunFailure(supabaseAdmin, {
+        runId: data.runId,
+        userId: context.userId,
+        errorMessage: (e as Error).message,
+      });
+      return { resumed: false, reason: "failed" as const };
+    }
+    return { resumed: true as const };
+  });
 
 /** Runs with no progress update for this long are considered dead. */
 const STALL_MS = 5 * 60 * 1000;
+
 
 async function failStalledRuns(supabase: {
   from: (t: string) => any;
