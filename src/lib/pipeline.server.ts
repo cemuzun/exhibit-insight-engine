@@ -1380,6 +1380,25 @@ ${sourceLinks.slice(0, 80).join("\n")}`,
   for (const ev of topEvents) {
     await progress("extract_exhibitors", `Extracting exhibitors from ${ev.event_name}`);
 
+    const diag: SourceDiag = { candidates: 0, rejected: [], accepted: [] };
+    const debugEntry: ShowDebugEntry = {
+      show: ev.event_name,
+      official_url: ev.official_url ?? null,
+      candidates: 0,
+      accepted: [],
+      rejected: [],
+      pages: [],
+      exhibitors: 0,
+      skip_reason: null,
+    };
+    const saveDebug = async () => {
+      debugEntry.candidates = diag.candidates;
+      debugEntry.accepted = diag.accepted.slice(0, 25);
+      debugEntry.rejected = diag.rejected.slice(0, 25);
+      const rest = counters.show_debug.filter((d) => d.show !== debugEntry.show);
+      counters.show_debug = [debugEntry, ...rest].slice(0, 60);
+      await bumpCounters({ show_debug: counters.show_debug });
+    };
 
     let sources: Array<{ url: string; markdown: string }> = [
       { url: input.inputUrl, markdown: sourceMarkdown },
@@ -1395,6 +1414,7 @@ ${sourceLinks.slice(0, 80).join("\n")}`,
               ev.official_url,
               ev.event_name,
               unlimitedLeads ? 0 : Math.max(requestedLeads, 12),
+              diag,
             ),
         );
         if (sources.length === 0) {
@@ -1408,15 +1428,22 @@ ${sourceLinks.slice(0, 80).join("\n")}`,
             status: "skipped",
             reason: "Skipped — no public exhibitor list found on the event site",
           });
+          debugEntry.skip_reason = "No public exhibitor list found on the event site";
+          await saveDebug();
           await bumpCounters({ deep_dive_done: counters.deep_dive_done + 1 });
           continue;
         }
       } catch (e) {
         limitations.push(`Could not scrape ${ev.event_name}: ${(e as Error).message}`);
+        debugEntry.skip_reason = `Scrape failed — ${(e as Error).message}`;
+        await saveDebug();
         await bumpCounters({ deep_dive_done: counters.deep_dive_done + 1 });
         continue;
       }
     }
+    await saveDebug();
+
+
 
     // Try each candidate source until enough exhibitors are found. Detail pages
     // produce one company each, while listing pages can produce many.
