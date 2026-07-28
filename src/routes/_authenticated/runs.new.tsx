@@ -24,6 +24,8 @@ function NewRun() {
     minProjectValue: 25000,
     maxLeadsPerShow: 10,
     minLeadTimeDays: 45,
+    startDateFrom: "",
+    startDateTo: "",
     maxEvents: 500,
     maxDirectoryPages: 25,
     maxDeepDiveShows: 4,
@@ -43,6 +45,8 @@ function NewRun() {
           minProjectValue: form.minProjectValue,
           maxLeadsPerShow: form.maxLeadsPerShow,
           minLeadTimeDays: form.minLeadTimeDays,
+          startDateFrom: form.startDateFrom || null,
+          startDateTo: form.startDateTo || null,
           maxEvents: form.maxEvents,
           maxDirectoryPages: form.maxDirectoryPages,
           maxDeepDiveShows: form.maxDeepDiveShows,
@@ -119,13 +123,38 @@ function NewRun() {
               className="w-full rounded-md border border-border bg-input px-3 py-2 text-sm font-mono"
             />
           </Field>
-          <Field label="Min days until show" hint="Shows starting sooner (or already past) are skipped.">
+          <Field
+            label="Min days until show"
+            hint={
+              form.startDateFrom
+                ? "Ignored — a start date is set below."
+                : "Shows starting sooner (or already past) are skipped."
+            }
+          >
             <input
               type="number"
               min={0}
               max={365}
+              disabled={Boolean(form.startDateFrom)}
               value={form.minLeadTimeDays}
               onChange={(e) => setForm({ ...form, minLeadTimeDays: parseInt(e.target.value || "0") })}
+              className="w-full rounded-md border border-border bg-input px-3 py-2 text-sm font-mono disabled:opacity-50"
+            />
+          </Field>
+          <Field label="Scan shows starting from" hint="Optional. Overrides the rolling window above.">
+            <input
+              type="date"
+              value={form.startDateFrom}
+              onChange={(e) => setForm({ ...form, startDateFrom: e.target.value })}
+              className="w-full rounded-md border border-border bg-input px-3 py-2 text-sm font-mono"
+            />
+          </Field>
+          <Field label="...through" hint="Optional end of the window.">
+            <input
+              type="date"
+              min={form.startDateFrom || undefined}
+              value={form.startDateTo}
+              onChange={(e) => setForm({ ...form, startDateTo: e.target.value })}
               className="w-full rounded-md border border-border bg-input px-3 py-2 text-sm font-mono"
             />
           </Field>

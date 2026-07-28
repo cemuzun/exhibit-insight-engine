@@ -593,6 +593,10 @@ export async function runPipeline(
       maxDeepDiveShows?: number;
       /** Skip shows starting sooner than this many days from now (default 45). */
       minLeadTimeDays?: number;
+      /** Only keep shows starting on or after this ISO date (YYYY-MM-DD). Overrides minLeadTimeDays. */
+      startDateFrom?: string | null;
+      /** Only keep shows starting on or before this ISO date (YYYY-MM-DD). */
+      startDateTo?: string | null;
       priorityIndustries?: string[];
       targetServices?: string[];
       /** Optional per-run tuning of parallelism / request rates. */
@@ -870,10 +874,36 @@ ${sourceLinks.slice(0, 80).join("\n")}`,
 
   // Drop shows that are already over or too close to sell into (booth design,
   // fabrication and shipping need lead time).
+  // An explicit "from" date is a direct answer to "is this too soon?", so when the
+  // user supplies one it replaces the rolling lead-time window entirely.
   const minLeadDays = Math.max(0, Math.min(365, input.filters.minLeadTimeDays ?? 45));
-  const dated = eventList.events.map((e) => ({ event: e, leadDays: eventLeadTimeDays(e.start_date) }));
-  const tooSoon = dated.filter((d) => d.leadDays !== null && d.leadDays < minLeadDays);
-  const eligible = dated.filter((d) => d.leadDays === null || d.leadDays >= minLeadDays).map((d) => d.event);
+  const fromDate = input.filters.startDateFrom ? parseEventStartDate(input.filters.startDateFrom) : null;
+  const toDate = input.filters.startDateTo ? parseEventStartDate(input.filters.startDateTo) : null;
+
+  const dated = eventList.events.map((e) => ({
+    event: e,
+    leadDays: eventLeadTimeDays(e.start_date),
+    start: parseEventStartDate(e.start_date),
+  }));
+
+  // Undated shows are always kept — we can't prove they're too soon.
+  const isEligible = (d: (typeof dated)[number]) => {
+    if (fromDate || toDate) {
+      if (!d.start) return true;
+      if (fromDate && d.start < fromDate) return false;
+      if (toDate && d.start > toDate) return false;
+      return true;
+    }
+    return d.leadDays === null || d.leadDays >= minLeadDays;
+  };
+
+  const tooSoon = dated.filter((d) => !isEligible(d));
+  const eligible = dated.filter(isEligible).map((d) => d.event);
+  const windowLabel = fromDate
+    ? `outside your date window (from ${input.filters.startDateFrom}${input.filters.startDateTo ? ` to ${input.filters.startDateTo}` : ""})`
+    : toDate
+      ? `after ${input.filters.startDateTo}`
+      : `starting in under ${minLeadDays} days (or already past)`;
 
   await bumpCounters({
     discovered: eventList.events.length,
@@ -885,7 +915,7 @@ ${sourceLinks.slice(0, 80).join("\n")}`,
 
   if (tooSoon.length > 0) {
     limitations.push(
-      `Skipped ${tooSoon.length} show(s) starting in under ${minLeadDays} days (or already past): ${tooSoon
+      `Skipped ${tooSoon.length} show(s) ${windowLabel}: ${tooSoon
         .slice(0, 5)
         .map((d) => d.event.event_name)
         .join(", ")}${tooSoon.length > 5 ? "…" : ""}`,
@@ -893,7 +923,7 @@ ${sourceLinks.slice(0, 80).join("\n")}`,
   }
 
   if (eligible.length === 0 && eventList.events.length > 0) {
-    const msg = `All ${eventList.events.length} show(s) found start in under ${minLeadDays} days or are already past. Lower "Min days until show" or use a directory page that lists later dates.`;
+    const msg = `All ${eventList.events.length} show(s) found fall ${windowLabel}. Widen the date window (or lower "Min days until show") or use a directory page that lists later dates.`;
     limitations.push(msg);
     await finishSteps();
     await admin
