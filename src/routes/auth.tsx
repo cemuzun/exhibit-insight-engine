@@ -6,10 +6,8 @@ import { toast } from "sonner";
 
 export const Route = createFileRoute("/auth")({
   head: () => ({ meta: [{ title: "Sign in — BoothLens" }, { name: "robots", content: "noindex" }] }),
-  beforeLoad: async () => {
-    // Redirect if already signed in (client-side; loader runs isomorphic but supabase session lives on client)
-  },
   component: AuthPage,
+
 });
 
 function AuthPage() {
