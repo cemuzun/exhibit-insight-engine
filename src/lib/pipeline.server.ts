@@ -534,14 +534,27 @@ const EXHIBITOR_LINK_RE =
 const EXHIBITOR_NEGATIVE_RE =
   /prospectus|sponsor|become[-_/]?an?[-_/]?exhibitor|why[-_/]?exhibit|faq|service[-_/]?manual|resources?|contact|pricing|rates|\.pdf($|\?)/i;
 
-/** Directory platforms that reliably host real exhibitor lists. */
-const EXHIBITOR_PLATFORM_RE = /mapyourshow|a2zinc|expocad|swapcard|eventscribe|10times\.com\/.+\/exhibitors/i;
+/**
+ * Directory platforms that reliably host real exhibitor lists. Many shows put
+ * these on a `directory.<show>.com` subdomain with opaque `.cfm` paths that
+ * contain no "exhibitor" keyword at all, so match the platform shape too.
+ */
+const EXHIBITOR_PLATFORM_RE =
+  /mapyourshow|a2zinc|expocad|swapcard|eventscribe|exhibitor-alphalist|10times\.com\/.+\/exhibitors|\/\d+_\d+\/(explore|exhibitor|exhview)\b/i;
+
+/** A `directory.` / `exhibitors.` host is itself strong evidence. */
+const DIRECTORY_HOST_RE = /^(directory|exhibitors?|directory\d*)\./i;
 
 function scoreCandidate(url: string): number {
   let score = 0;
   if (EXHIBITOR_PLATFORM_RE.test(url)) score += 6;
   if (/exhibitor[-_/]?(list|directory|search)|exhibitor-?directory|who-?s-?exhibiting/i.test(url)) score += 4;
   if (/\/exhibitors?\/?($|\?)/i.test(url)) score += 2;
+  try {
+    if (DIRECTORY_HOST_RE.test(new URL(url).hostname)) score += 4;
+  } catch {
+    /* ignore unparseable urls */
+  }
   if (EXHIBITOR_NEGATIVE_RE.test(url)) score -= 5;
   return score;
 }
@@ -559,6 +572,16 @@ function looksLikeExhibitorContent(markdown: string): boolean {
   return boothHits >= 3 || companyish >= 8 || (companyish >= 4 && linkLines >= 20);
 }
 
+/**
+ * Directory platforms bury the company list under a long filter/nav header.
+ * Start the slice at the results section so the model's context window is
+ * spent on companies rather than square-footage checkboxes.
+ */
+function trimToListing(markdown: string): string {
+  const m = /(#+\s*(results|featured exhibitors|exhibitor list|all exhibitors)|^\s*A\s*\|\s*B\s*\|)/im.exec(markdown);
+  return m && m.index > 500 ? markdown.slice(m.index) : markdown;
+}
+
 /** Common exhibitor-directory paths to try when a site exposes no obvious link. */
 const EXHIBITOR_PATH_GUESSES = [
   "/exhibitor-list",
@@ -568,14 +591,28 @@ const EXHIBITOR_PATH_GUESSES = [
   "/exhibitors",
 ];
 
+/** MapYourShow-hosted directories follow a fixed shape on a `directory.` host. */
+const DIRECTORY_HOST_GUESSES = [
+  "/8_0/explore/exhibitor-alphalist.cfm",
+  "/exhibitor-alphalist.cfm",
+];
+
 function guessExhibitorUrls(officialUrl: string): string[] {
   try {
     const base = new URL(officialUrl);
-    return EXHIBITOR_PATH_GUESSES.map((p) => new URL(p, `${base.protocol}//${base.host}`).toString());
+    const apex = base.host.replace(/^www\./i, "");
+    const urls = EXHIBITOR_PATH_GUESSES.map((p) =>
+      new URL(p, `${base.protocol}//${base.host}`).toString(),
+    );
+    for (const p of DIRECTORY_HOST_GUESSES) {
+      urls.push(new URL(p, `https://directory.${apex}`).toString());
+    }
+    return urls;
   } catch {
     return [];
   }
 }
+
 
 /**
  * Event homepages almost never list exhibitors, and "exhibitor resources"
@@ -606,36 +643,49 @@ async function findExhibitorSources(
   for (const link of home?.links ?? []) if (EXHIBITOR_LINK_RE.test(link)) push(link);
   for (const g of guessExhibitorUrls(officialUrl)) push(g);
 
-  // Aggregators + platform-hosted directories via web search.
+  // Aggregators + platform-hosted directories via web search. Search hits are
+  // the only way to reach directories on a separate host with a keyword-free
+  // path (e.g. directory.imts.com/8_0/exhview/index.cfm), so give them a base
+  // score that survives ranking instead of discarding them.
+  const searchHits = new Set<string>();
   if (!outOfTime()) {
     const queries = [
       `${eventName} exhibitor list directory`,
+      `${eventName} exhibitor directory booth numbers`,
       `10times ${eventName} exhibitors`,
     ];
     for (const q of queries) {
-      const results = await firecrawlSearch(q, { limit: 5 }).catch(() => [] as Array<{ url: string }>);
-      for (const r of results) push(r.url);
+      if (outOfTime()) break;
+      const results = await firecrawlSearch(q, { limit: 6 }).catch(() => [] as Array<{ url: string }>);
+      for (const r of results) {
+        push(r.url);
+        searchHits.add(r.url);
+      }
     }
   }
 
   const ranked = candidates
-    .map((url) => ({ url, score: scoreCandidate(url) }))
+    .map((url) => ({ url, score: scoreCandidate(url) + (searchHits.has(url) ? 1 : 0) }))
     .filter((c) => c.score > 0)
     .sort((a, b) => b.score - a.score)
     .map((c) => c.url);
 
   const found: Array<{ url: string; markdown: string }> = [];
-  for (const url of ranked.slice(0, 6)) {
+  for (const url of ranked.slice(0, 10)) {
     if (outOfTime() || found.length >= max) break;
-    const page = await firecrawlScrape(url, { formats: ["markdown"] }).catch(() => null);
+    // Directory platforms render the list client-side; give them a moment.
+    const page = await firecrawlScrape(url, { formats: ["markdown"], waitFor: 4000 }).catch(() => null);
     const md = page?.markdown ?? "";
-    if (looksLikeExhibitorContent(md)) found.push({ url, markdown: md });
+    if (looksLikeExhibitorContent(md)) found.push({ url, markdown: trimToListing(md) });
   }
 
   const homeMd = home?.markdown ?? "";
-  if (found.length === 0 && looksLikeExhibitorContent(homeMd)) found.push({ url: officialUrl, markdown: homeMd });
+  if (found.length === 0 && looksLikeExhibitorContent(homeMd)) {
+    found.push({ url: officialUrl, markdown: trimToListing(homeMd) });
+  }
   return found;
 }
+
 
 
 
@@ -1175,7 +1225,7 @@ TASK: Extract EXHIBITING COMPANIES from the source below for event "${ev.event_n
 Source URL: ${src.url}
 
 --- SOURCE MARKDOWN ---
-${src.markdown.slice(0, 30000)}`;
+${src.markdown.slice(0, 60000)}`;
 
       try {
         const exhibitorList = await withHeartbeat(
