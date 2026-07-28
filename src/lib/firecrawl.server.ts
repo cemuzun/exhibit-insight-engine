@@ -9,13 +9,25 @@ function key(): string {
   return k;
 }
 
-function parseRetryAfter(res: Response): number | undefined {
+function parseRetryAfter(res: Response, body?: unknown): number | undefined {
   const h = res.headers.get("retry-after");
-  if (!h) return undefined;
-  const secs = Number(h);
-  if (Number.isFinite(secs)) return secs * 1000;
-  const date = Date.parse(h);
-  return Number.isFinite(date) ? Math.max(0, date - Date.now()) : undefined;
+  if (h) {
+    const secs = Number(h);
+    if (Number.isFinite(secs)) return secs * 1000;
+    const date = Date.parse(h);
+    if (Number.isFinite(date)) return Math.max(0, date - Date.now());
+  }
+  // Firecrawl reports the reset window in the error body, not a header:
+  // "... please retry after 39s, resets at Tue Jul 28 2026 14:55:17 GMT+0000"
+  const text = typeof body === "string" ? body : JSON.stringify(body ?? "");
+  const secMatch = /retry after (\d+)\s*s/i.exec(text);
+  if (secMatch) return (Number(secMatch[1]) + 2) * 1000;
+  const resetMatch = /resets at ([^"}]+)/i.exec(text);
+  if (resetMatch) {
+    const t = Date.parse(resetMatch[1].trim());
+    if (Number.isFinite(t)) return Math.max(0, t - Date.now()) + 2000;
+  }
+  return undefined;
 }
 
 async function firecrawlPost<T>(path: string, payload: unknown, label: string): Promise<T> {
@@ -41,7 +53,7 @@ async function firecrawlPost<T>(path: string, payload: unknown, label: string): 
         throw new RateLimitError(
           `Firecrawl ${label} ${res.status}: ${detail}`,
           res.status,
-          parseRetryAfter(res),
+          parseRetryAfter(res, body),
         );
       }
       return body as T;
