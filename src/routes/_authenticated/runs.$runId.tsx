@@ -204,6 +204,13 @@ function RunDetail() {
         {!inProgress && (
           <div className="flex items-center gap-3">
             <RerunButton runId={runId} />
+            <Link
+              to="/outreach/$runId"
+              params={{ runId }}
+              className="rounded-md bg-primary px-3 py-2 text-xs font-medium text-primary-foreground"
+            >
+              Outreach queue
+            </Link>
             <CrmSyncPreview runId={runId} disabled={typedLeads.length === 0} />
             <CrmSyncButton runId={runId} disabled={typedLeads.length === 0} />
 
