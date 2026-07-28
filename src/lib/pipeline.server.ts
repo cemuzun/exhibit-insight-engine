@@ -1332,6 +1332,19 @@ ${sourceLinks.slice(0, 80).join("\n")}`,
     // Try each candidate source until one actually yields exhibitors.
     let exhibitors: import("zod").infer<typeof ExhibitorListSchema>["exhibitors"] = [];
     for (const src of sources) {
+      const deterministic = parseExhibitorsFromMarkdown(src.markdown, src.url, maxLeads * 2);
+      if (deterministic.length > 0) {
+        exhibitors = deterministic.slice(0, maxLeads);
+        await pushScoringEntry({
+          at: new Date().toISOString(),
+          company: exhibitors[0]?.company_name ?? "—",
+          show: ev.event_name,
+          status: "qualified",
+          reason: `Found ${exhibitors.length} exhibitor(s) directly from ${new URL(src.url).hostname}`,
+        });
+        break;
+      }
+
       const exhibitorPrompt = `${CORE_SYSTEM}
 
 TASK: Extract EXHIBITING COMPANIES from the source below for event "${ev.event_name}". Return up to ${maxLeads * 2} candidates. Skip associations, government bodies, media partners, sponsors that aren't exhibitors, universities, and service vendors that are not the trade show's own exhibitors. Normalize company names (strip Inc./LLC/etc for normalized_company_name).
