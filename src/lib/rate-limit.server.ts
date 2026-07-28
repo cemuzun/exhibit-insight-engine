@@ -14,6 +14,10 @@
  *   ENRICH_CONCURRENCY           (default 5)   parallel exhibitors per event
  *   RETRY_BASE_DELAY_MS          (default 800)
  *   RETRY_MAX_DELAY_MS           (default 70000)
+ *   BREAKER_FAILURE_THRESHOLD    (default 3)   rate-limit hits before tripping
+ *   BREAKER_COOLDOWN_MS          (default 30000) cooldown when the provider
+ *                                                gives us no reset time
+ *   BREAKER_MAX_COOLDOWN_MS      (default 180000)
  */
 
 function num(name: string, fallback: number): number {
@@ -28,6 +32,21 @@ export type LimiterConfig = {
   maxRetries: number;
 };
 
+/**
+ * closed    — normal operation
+ * open      — every worker is held; the provider told us (or we inferred) to stop
+ * half_open — cooldown elapsed; exactly one probe request is allowed through
+ */
+export type BreakerState = "closed" | "open" | "half_open";
+
+export type BreakerEvent = {
+  limiter: string;
+  state: BreakerState;
+  /** epoch ms the breaker expects to allow traffic again (open state only) */
+  resumeAt?: number;
+  reason?: string;
+};
+
 /** Concurrency gate + sliding-window rate limiter. */
 export class RateLimiter {
   private active = 0;
@@ -35,6 +54,18 @@ export class RateLimiter {
   private timestamps: number[] = [];
   /** Hard global pause (epoch ms) applied when the provider reports a reset time. */
   private pausedUntil = 0;
+
+  // ---- circuit breaker ----
+  // Retrying individual requests is not enough: with N parallel workers, a
+  // provider-wide 429 turns into N independent backoff loops that all keep
+  // poking the API. The breaker is shared state, so one rate limit stops
+  // everyone, and a single probe decides when it is safe to resume.
+  private breaker: BreakerState = "closed";
+  private consecutiveRateLimits = 0;
+  private openUntil = 0;
+  private cooldownMs = 0;
+  private probeInFlight = false;
+  private listeners = new Set<(e: BreakerEvent) => void>();
 
   constructor(
     public readonly name: string,
@@ -67,6 +98,108 @@ export class RateLimiter {
     if (next) next();
   }
 
+  get breakerState(): BreakerState {
+    return this.breaker;
+  }
+
+  /** epoch ms when an open breaker expects to let traffic through again. */
+  get resumeAt(): number {
+    return this.openUntil;
+  }
+
+  /** Subscribe to breaker transitions (used to surface pauses in run progress). */
+  onBreakerChange(fn: (e: BreakerEvent) => void): () => void {
+    this.listeners.add(fn);
+    return () => this.listeners.delete(fn);
+  }
+
+  private emit(state: BreakerState, reason?: string) {
+    const event: BreakerEvent = {
+      limiter: this.name,
+      state,
+      ...(state === "open" ? { resumeAt: this.openUntil } : {}),
+      ...(reason ? { reason } : {}),
+    };
+    for (const fn of this.listeners) {
+      try {
+        fn(event);
+      } catch {
+        // A misbehaving listener must never break the request path.
+      }
+    }
+  }
+
+  /**
+   * Report a rate limit (or repeated overload). Once the threshold is crossed
+   * the breaker opens and every worker parks until the reset time.
+   */
+  reportRateLimited(retryAfterMs?: number, reason?: string) {
+    this.consecutiveRateLimits++;
+    const threshold = num("BREAKER_FAILURE_THRESHOLD", 3);
+    const base = num("BREAKER_COOLDOWN_MS", 30_000);
+    const max = num("BREAKER_MAX_COOLDOWN_MS", 180_000);
+
+    // A failed probe means the provider is still limiting: back off harder.
+    if (this.breaker === "half_open") {
+      this.cooldownMs = Math.min(Math.max(this.cooldownMs * 2, base), max);
+    } else if (this.consecutiveRateLimits >= threshold) {
+      this.cooldownMs = Math.min(Math.max(retryAfterMs ?? base, base), max);
+    } else {
+      return;
+    }
+
+    const until = Date.now() + Math.min(Math.max(retryAfterMs ?? this.cooldownMs, this.cooldownMs), max);
+    this.openUntil = Math.max(this.openUntil, until);
+    this.probeInFlight = false;
+    if (this.breaker !== "open") {
+      this.breaker = "open";
+      this.emit("open", reason ?? "provider rate limit");
+    }
+  }
+
+  /** A completed request proves the provider is healthy again. */
+  reportSuccess() {
+    this.consecutiveRateLimits = 0;
+    if (this.breaker !== "closed") {
+      this.breaker = "closed";
+      this.openUntil = 0;
+      this.cooldownMs = 0;
+      this.probeInFlight = false;
+      this.emit("closed");
+    }
+  }
+
+  /**
+   * Hold the caller while the breaker is open. When the cooldown expires the
+   * first caller through becomes the probe; the rest keep waiting until that
+   * probe either closes the breaker or re-opens it.
+   */
+  private async waitForBreaker(): Promise<void> {
+    for (;;) {
+      if (this.breaker === "closed") return;
+
+      const remaining = this.openUntil - Date.now();
+      if (remaining > 0) {
+        await sleep(Math.min(remaining, 2_000));
+        continue;
+      }
+
+      if (this.breaker === "open") {
+        this.breaker = "half_open";
+        this.probeInFlight = true;
+        this.emit("half_open", "testing whether the provider recovered");
+        return; // this caller is the probe
+      }
+
+      // half_open: someone else is probing.
+      if (!this.probeInFlight) {
+        this.probeInFlight = true;
+        return;
+      }
+      await sleep(500);
+    }
+  }
+
   /** Pause every request in this limiter until the given epoch ms. */
   pauseUntil(ts: number) {
     if (ts > this.pausedUntil) this.pausedUntil = ts;
@@ -97,9 +230,12 @@ export class RateLimiter {
   async run<T>(fn: () => Promise<T>): Promise<T> {
     await this.acquireSlot();
     try {
+      await this.waitForBreaker();
       await this.waitForPause();
       await this.waitForWindow();
-      return await fn();
+      const result = await fn();
+      this.reportSuccess();
+      return result;
     } finally {
       this.release();
     }
@@ -145,6 +281,13 @@ export function isRetryable(error: unknown): boolean {
     msg.includes("socket") ||
     /\b5\d\d\b/.test(msg)
   );
+}
+
+/** Narrower than isRetryable: only provider throttling should trip the breaker. */
+export function isRateLimit(error: unknown): boolean {
+  if (statusOf(error) === 429) return true;
+  const msg = String((error as Error)?.message ?? "").toLowerCase();
+  return msg.includes("429") || msg.includes("rate limit") || msg.includes("too many requests");
 }
 
 export function retryAfterMsOf(error: unknown): number | undefined {
@@ -205,6 +348,9 @@ export async function guarded<T>(
       // workers stop hammering the API until the window actually resets.
       const ra = retryAfterMsOf(info.error);
       if (ra && ra > 0) limiter.pauseUntil(Date.now() + Math.min(ra, 120_000));
+      if (isRateLimit(info.error)) {
+        limiter.reportRateLimited(ra, (info.error as Error)?.message);
+      }
       opts.onRetry?.(info);
     },
   });
