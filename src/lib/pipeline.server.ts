@@ -2,6 +2,7 @@ import { generateText, Output, NoObjectGeneratedError } from "ai";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createLovableAiGatewayProvider, requireLovableKey } from "./ai-gateway.server";
 import { firecrawlScrape, firecrawlSearch } from "./firecrawl.server";
+import { recentCachedScrapesForHost } from "./firecrawl-cache.server";
 import {
   guarded,
   llmLimiter,
@@ -786,17 +787,45 @@ async function findExhibitorSources(
     .map((c) => c.url);
 
   const found: Array<{ url: string; markdown: string }> = [];
+  const seenFound = new Set<string>();
+  const addFound = (url: string, markdown: string) => {
+    if (seenFound.has(url) || !looksLikeExhibitorContent(markdown)) return;
+    seenFound.add(url);
+    found.push({ url, markdown: trimToListing(markdown) });
+  };
+
+  // Reruns often already have useful MapYourShow detail pages cached from an
+  // interrupted attempt. Use them immediately instead of waiting on the listing
+  // page or the model again.
+  const cachedHosts = new Set<string>();
+  for (const url of ranked) {
+    try {
+      const host = new URL(url).hostname;
+      if (/directory\.|mapyourshow|a2zinc/i.test(host)) cachedHosts.add(host);
+    } catch {
+      // ignore malformed search results
+    }
+  }
+  for (const host of cachedHosts) {
+    if (found.length >= max) break;
+    const cached = await recentCachedScrapesForHost(host, { limit: max });
+    for (const page of cached) {
+      addFound(page.url, page.markdown);
+      if (found.length >= max) break;
+    }
+  }
+
   for (const url of ranked.slice(0, 10)) {
     if (outOfTime() || found.length >= max) break;
     // Directory platforms render the list client-side; give them a moment.
     const page = await firecrawlScrape(url, { formats: ["markdown"], waitFor: 4000 }).catch(() => null);
     const md = page?.markdown ?? "";
-    if (looksLikeExhibitorContent(md)) found.push({ url, markdown: trimToListing(md) });
+    addFound(url, md);
   }
 
   const homeMd = home?.markdown ?? "";
   if (found.length === 0 && looksLikeExhibitorContent(homeMd)) {
-    found.push({ url: officialUrl, markdown: trimToListing(homeMd) });
+    addFound(officialUrl, homeMd);
   }
   return found;
 }
