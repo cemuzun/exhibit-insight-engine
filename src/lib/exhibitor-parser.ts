@@ -56,6 +56,62 @@ function addExhibitor(out: Map<string, ExhibitorRecord>, exhibitor: ExhibitorRec
   });
 }
 
+const LIST_NOISE_RE =
+  /^(as of|exhibitors?|exhibitor list|company|booth|page \d+|updated|table of contents|\d{1,4}|[a-z])\b/i;
+
+/**
+ * PDF exhibitor lists (and simple HTML lists) are just one company per line,
+ * often wrapped mid-name by the PDF layout. Rejoin wrapped lines and keep the
+ * entries that look like company names.
+ */
+export function parseExhibitorsFromPlainList(markdown: string, max = 500): ExhibitorRecord[] {
+  const raw = markdown
+    .split("\n")
+    .map((l) => l.replace(/^[-*•\s]+/, "").replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+
+  // Rejoin lines the PDF layout wrapped: "American Green Spring Diagnostics" + "Inc."
+  const lines: string[] = [];
+  for (const line of raw) {
+    const prev = lines[lines.length - 1];
+    const isContinuation =
+      prev &&
+      prev.length > 3 &&
+      !/[.)\]]$/.test(prev) === false === false && // keep simple: judged below
+      /^(inc\.?|llc|ltd\.?|corp\.?|co\.|gmbh|s\.a\.?|b\.v\.?|ag|plc|\(|and\b|&|[a-z])/i.test(line) &&
+      line.length < 60;
+    if (isContinuation) lines[lines.length - 1] = `${prev} ${line}`;
+    else lines.push(line);
+  }
+
+  const out = new Map<string, ExhibitorRecord>();
+  for (const line of lines) {
+    if (out.size >= max) break;
+    if (/^#/.test(line) || /^\|/.test(line)) continue;
+    // "Acme Corp .... Booth 123" / "Acme Corp — 1042"
+    const boothMatch = /^(.{2,90}?)[\s.\u2026|,–—-]{2,}([A-Z]{0,4}\d[\w.-]{0,8})$/.exec(line);
+    const name = cleanCompanyName(boothMatch ? boothMatch[1] : line);
+    if (!name || name.length < 3 || name.length > 90) continue;
+    if (LIST_NOISE_RE.test(name)) continue;
+    if (/^[^A-Za-z]*$/.test(name)) continue;
+    if (name.split(" ").length > 10) continue;
+    if (/[?!]$/.test(name)) continue;
+    addExhibitor(out, {
+      company_name: name,
+      normalized_company_name: name,
+      company_website: null,
+      booth_number: boothMatch ? boothMatch[2] : null,
+      category: null,
+    });
+  }
+  if (out.size === 0) {
+    // Plain company-per-line lists (PDF handouts, simple HTML pages).
+    for (const ex of parseExhibitorsFromPlainList(markdown, max)) addExhibitor(out, ex);
+  }
+
+  return Array.from(out.values()).slice(0, max);
+}
+
 /**
  * Directory platforms often expose structured markdown already. Use deterministic
  * extraction before asking a model so a huge MapYourShow page cannot stall the run.
