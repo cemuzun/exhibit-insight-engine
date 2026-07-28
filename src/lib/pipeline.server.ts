@@ -1323,6 +1323,8 @@ ${sourceLinks.slice(0, 80).join("\n")}`,
   const requestedLeads = input.filters.maxLeadsPerShow ?? 10;
   const unlimitedLeads = requestedLeads <= 0;
   const maxLeads = unlimitedLeads ? Number.POSITIVE_INFINITY : requestedLeads;
+  /** Per-page extraction batch size (the model needs a finite number). */
+  const extractBatch = unlimitedLeads ? 200 : requestedLeads * 2;
 
   // 0 (or unset via 0) means "deep-dive every show we kept" — no cap.
   const requestedDeepDive = input.filters.maxDeepDiveShows ?? (eventList.is_directory ? 12 : 1);
@@ -1352,7 +1354,12 @@ ${sourceLinks.slice(0, 80).join("\n")}`,
         sources = await withHeartbeat(
           "extract_exhibitors",
           `Looking for the exhibitor list of ${ev.event_name}`,
-          () => findExhibitorSources(ev.official_url, ev.event_name, Math.max(maxLeads, 12)),
+          () =>
+            findExhibitorSources(
+              ev.official_url,
+              ev.event_name,
+              unlimitedLeads ? 0 : Math.max(requestedLeads, 12),
+            ),
         );
         if (sources.length === 0) {
           limitations.push(
@@ -1411,7 +1418,7 @@ ${sourceLinks.slice(0, 80).join("\n")}`,
     };
 
     for (const src of sources) {
-      const deterministic = parseExhibitorsFromMarkdown(src.markdown, src.url, maxLeads * 2);
+      const deterministic = parseExhibitorsFromMarkdown(src.markdown, src.url, extractBatch);
       if (deterministic.length > 0) {
         const added = addCandidateExhibitors(deterministic);
         await recordPageParsed(src.url, added);
@@ -1428,7 +1435,7 @@ ${sourceLinks.slice(0, 80).join("\n")}`,
 
       const exhibitorPrompt = `${CORE_SYSTEM}
 
-TASK: Extract EXHIBITING COMPANIES from the source below for event "${ev.event_name}". Return up to ${maxLeads * 2} candidates. Skip associations, government bodies, media partners, sponsors that aren't exhibitors, universities, and service vendors that are not the trade show's own exhibitors. Normalize company names (strip Inc./LLC/etc for normalized_company_name).
+TASK: Extract EXHIBITING COMPANIES from the source below for event "${ev.event_name}". Return up to ${extractBatch} candidates. Extract EVERY exhibiting company listed on the page — do not stop early or summarize. Skip associations, government bodies, media partners, sponsors that aren't exhibitors, universities, and service vendors that are not the trade show's own exhibitors. Normalize company names (strip Inc./LLC/etc for normalized_company_name).
 
 Source URL: ${src.url}
 
@@ -1455,7 +1462,7 @@ ${src.markdown.slice(0, 60000)}`;
       }
     }
 
-    exhibitors = exhibitors.slice(0, maxLeads);
+    if (!unlimitedLeads) exhibitors = exhibitors.slice(0, requestedLeads);
 
     if (exhibitors.length === 0) {
       limitations.push(`No exhibitors could be extracted for ${ev.event_name}.`);
