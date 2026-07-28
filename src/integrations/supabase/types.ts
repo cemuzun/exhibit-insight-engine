@@ -543,6 +543,42 @@ export type Database = {
         }
         Relationships: []
       }
+      scoring_settings: {
+        Row: {
+          created_at: string
+          qualified_min: number
+          tier1_min: number
+          tier1_requires_verified_contact: boolean
+          tier2_min: number
+          tier3_min: number
+          updated_at: string
+          user_id: string
+          weights: Json
+        }
+        Insert: {
+          created_at?: string
+          qualified_min?: number
+          tier1_min?: number
+          tier1_requires_verified_contact?: boolean
+          tier2_min?: number
+          tier3_min?: number
+          updated_at?: string
+          user_id: string
+          weights?: Json
+        }
+        Update: {
+          created_at?: string
+          qualified_min?: number
+          tier1_min?: number
+          tier1_requires_verified_contact?: boolean
+          tier2_min?: number
+          tier3_min?: number
+          updated_at?: string
+          user_id?: string
+          weights?: Json
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
