@@ -29,18 +29,30 @@ function ago(iso: string) {
 export function LiveExhibitors({
   samples,
   total,
+  lastUpdated,
 }: {
   samples: ExhibitorSample[];
   total: number;
+  lastUpdated?: string | null;
 }) {
   if (samples.length === 0) return null;
 
   return (
     <section className="mb-6 rounded-lg border border-border bg-card">
       <header className="flex items-center justify-between border-b border-border px-4 py-3">
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-          Exhibitors found so far
-        </h2>
+        <div className="flex items-center gap-2">
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+            Exhibitors found so far
+          </h2>
+          <span className="inline-flex items-center gap-1.5 rounded border border-success/30 bg-success/10 px-2 py-0.5 text-[11px] text-success">
+            <span className="relative flex h-1.5 w-1.5">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-75" />
+              <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-success" />
+            </span>
+            Live
+            {lastUpdated && <span className="text-success/80">· updated {ago(lastUpdated)}</span>}
+          </span>
+        </div>
         <span className="font-mono text-xs text-muted-foreground">
           showing {samples.length} of {total}
         </span>

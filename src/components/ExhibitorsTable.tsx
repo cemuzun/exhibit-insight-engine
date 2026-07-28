@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 
 export type ExhibitorRow = {
   id: string;
@@ -42,11 +42,35 @@ function csvCell(value: string) {
   return /[",\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
 }
 
+function ago(iso: string | null | undefined, nowMs: number) {
+  if (!iso) return null;
+  const s = Math.max(0, Math.round((nowMs - new Date(iso).getTime()) / 1000));
+  if (s < 60) return `${s}s ago`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  return `${Math.floor(m / 60)}h ago`;
+}
 
-export function ExhibitorsTable({ rows }: { rows: ExhibitorRow[] }) {
+
+export function ExhibitorsTable({
+  rows,
+  inProgress = false,
+  lastUpdated,
+}: {
+  rows: ExhibitorRow[];
+  inProgress?: boolean;
+  lastUpdated?: string | null;
+}) {
   const [query, setQuery] = useState("");
   const [onlyBooth, setOnlyBooth] = useState(false);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const [now, setNow] = useState(Date.now());
+
+  useEffect(() => {
+    if (!inProgress) return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [inProgress]);
 
   const groups = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -146,7 +170,17 @@ export function ExhibitorsTable({ rows }: { rows: ExhibitorRow[] }) {
         >
           Export CSV
         </button>
-        <div className="ml-auto text-xs text-muted-foreground">
+        <div className="ml-auto flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+          {inProgress && (
+            <span className="inline-flex items-center gap-1.5 rounded border border-success/30 bg-success/10 px-2 py-1 text-[11px] text-success">
+              <span className="relative flex h-1.5 w-1.5">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-75" />
+                <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-success" />
+              </span>
+              Live
+              {lastUpdated && <span className="text-success/80">· updated {ago(lastUpdated, now)}</span>}
+            </span>
+          )}
           <span className="font-mono text-foreground">{totalShown}</span> exhibitors ·{" "}
           <span className="font-mono text-foreground">{totalBooths}</span> with booth ·{" "}
           <span className="font-mono text-foreground">{groups.length}</span> shows

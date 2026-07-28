@@ -265,7 +265,13 @@ function RunDetail() {
         };
         const samples = c.exhibitor_samples ?? [];
         if (typedLeads.length > 0 || samples.length === 0) return null;
-        return <LiveExhibitors samples={samples} total={c.exhibitors_found ?? samples.length} />;
+        return (
+          <LiveExhibitors
+            samples={samples}
+            total={c.exhibitors_found ?? samples.length}
+            lastUpdated={(run as { updated_at?: string }).updated_at ?? null}
+          />
+        );
       })()}
 
 
@@ -287,7 +293,11 @@ function RunDetail() {
       {mode === "dashboard" ? (
         <DashboardView run={run} events={visibleEvents} leads={typedLeads} es={es} onSelect={setSelected} />
       ) : mode === "exhibitors" ? (
-        <ExhibitorsTable rows={typedLeads as unknown as ExhibitorRow[]} />
+        <ExhibitorsTable
+          rows={typedLeads as unknown as ExhibitorRow[]}
+          inProgress={inProgress}
+          lastUpdated={(run as { updated_at?: string }).updated_at ?? null}
+        />
       ) : (
         <ReportView runId={runId} run={run} events={visibleEvents} leads={typedLeads} es={es} />
       )}
