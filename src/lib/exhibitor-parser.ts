@@ -17,9 +17,37 @@ export function normalizedCompanyKey(value: string): string {
     .trim();
 }
 
-function isLikelyCompanyName(value: string): boolean {
+/** Navigation labels, section headings and UI chrome that are never companies. */
+const NAV_NOISE = new Set(
+  [
+    "attendees","attendee","exhibitors","exhibitor","exhibit","exhibits","exhibitor list","exhibitor directory",
+    "suppliers","supplier","vendors","vendor","sponsors","sponsor","sponsorship","partners","partner",
+    "home","about","about us","contact","contact us","register","registration","register now","login","log in",
+    "sign in","sign up","search","menu","news","press","media","blog","events","event","event info","schedule",
+    "agenda","program","programme","sessions","speakers","speaker","education","conference","expo","show",
+    "trade show","tradeshow","floor plan","floorplan","map","maps","venue","hotels","hotel","travel","directions",
+    "faq","faqs","help","support","resources","resource","downloads","download","gallery","photos","videos",
+    "video","products","product","services","service","solutions","categories","category","industries","industry",
+    "membership","members","member","join","donate","shop","store","cart","careers","jobs","team","leadership",
+    "board","staff","privacy","privacy policy","terms","terms of use","cookie policy","sitemap","subscribe",
+    "newsletter","why exhibit","become an exhibitor","exhibitor resources","attendee info","attendee information",
+    "plan your visit","visit","visitors","visitor","buyers","buyer","press room","newsroom","all","view all",
+    "more","read more","learn more","next","previous","back","top","skip to content","main menu","navigation",
+    "book now","get started","apply","apply now","tickets","pricing","plans","overview","features","testimonials",
+    "awards","committees","committee","volunteer","advertise","advertising","exhibit space","exhibitor portal",
+  ].map((s) => s.toLowerCase()),
+);
+
+export function isLikelyCompanyName(value: string): boolean {
   const name = cleanCompanyName(value);
   if (name.length < 2 || name.length > 100) return false;
+  const lower = name.toLowerCase().replace(/[^a-z0-9& ]+/g, " ").replace(/\s+/g, " ").trim();
+  if (!lower) return false;
+  if (NAV_NOISE.has(lower)) return false;
+  // "Exhibitor List 2026", "2026 Attendees", "Sponsors & Partners"
+  if (/^(20\d{2}\s+)?(attendees?|exhibitors?|suppliers?|vendors?|sponsors?|partners?|speakers?|members?|buyers?|visitors?)(\s*(&|and)\s*\w+)?(\s+20\d{2})?(\s+(list|directory|search|index|a\s*z))?$/.test(lower)) {
+    return false;
+  }
   if (/^(download|add to planner|view details|company information|contact us|products?|videos?|show specials?|international manufacturing technology show|map your show)$/i.test(name)) {
     return false;
   }
@@ -27,6 +55,7 @@ function isLikelyCompanyName(value: string): boolean {
   if (/^(facebook|linkedin|instagram|youtube|x|twitter)$/i.test(name)) return false;
   return /[A-Za-z0-9]/.test(name);
 }
+
 
 function firstCompanyWebsite(markdown: string): string | null {
   const links = Array.from(markdown.matchAll(/\[([^\]]{2,120})\]\((https?:\/\/[^)\s"]+)/g));
