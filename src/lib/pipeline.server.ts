@@ -1339,7 +1339,7 @@ ${sourceLinks.slice(0, 80).join("\n")}`,
           at: new Date().toISOString(),
           company: exhibitors[0]?.company_name ?? "—",
           show: ev.event_name,
-          status: "qualified",
+          status: "scored",
           reason: `Found ${exhibitors.length} exhibitor(s) directly from ${new URL(src.url).hostname}`,
         });
         break;
