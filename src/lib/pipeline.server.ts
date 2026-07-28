@@ -318,31 +318,24 @@ ${exhibitorSource.slice(0, 30000)}`;
 
     const exhibitors = exhibitorList.exhibitors.slice(0, maxLeads);
 
-    const CONCURRENCY = 5;
     let completed = 0;
-    let cursor = 0;
 
-    const worker = async () => {
-      while (true) {
-        const i = cursor++;
-        if (i >= exhibitors.length) return;
-        const ex = exhibitors[i];
+    await mapPool(exhibitors, concurrency, async (ex) => {
+      // Firecrawl search for enrichment context
+      let enrichmentContext = "";
+      try {
+        const results = await firecrawlSearch(
+          `${ex.company_name} trade show exhibit booth ${ev.event_name}`,
+          { limit: 3 },
+        );
+        enrichmentContext = results
+          .map((r) => `[${r.url}] ${r.title ?? ""} — ${r.description ?? ""}`)
+          .join("\n");
+      } catch {
+        // Non-fatal
+      }
 
-        // Firecrawl search for enrichment context
-        let enrichmentContext = "";
-        try {
-          const results = await firecrawlSearch(
-            `${ex.company_name} trade show exhibit booth ${ev.event_name}`,
-            { limit: 3 },
-          );
-          enrichmentContext = results
-            .map((r) => `[${r.url}] ${r.title ?? ""} — ${r.description ?? ""}`)
-            .join("\n");
-        } catch {
-          // Non-fatal
-        }
-
-        const leadPrompt = `${CORE_SYSTEM}
+      const leadPrompt = `${CORE_SYSTEM}
 
 You are analyzing ONE exhibitor and producing a complete lead record.
 
@@ -369,30 +362,27 @@ TASK:
 5. List buying_triggers, risks_and_uncertainties, unknown_fields, and a plain-language rationale.
 6. Set confidence_level based on how well-supported the record is.`;
 
-        try {
-          const output = await generateStructured(reasonModel, LeadSchema, leadPrompt);
-          allLeads.push({
-            lead: output,
-            eventId: ev.id,
-            eventName: ev.event_name,
-            eventDate: ev.start_date ?? null,
-            boothNumber: ex.booth_number ?? null,
-          });
-        } catch (e) {
-          limitations.push(`Could not analyze ${ex.company_name}: ${(e as Error).message}`);
-        }
-
-        completed++;
-        await progress(
-          "enrich_leads",
-          `[${ev.event_name}] Analyzed ${completed}/${exhibitors.length} (${ex.company_name})`,
-        );
+      try {
+        const output = await generateStructured(reasonModel, LeadSchema, leadPrompt);
+        allLeads.push({
+          lead: output,
+          eventId: ev.id,
+          eventName: ev.event_name,
+          eventDate: ev.start_date ?? null,
+          boothNumber: ex.booth_number ?? null,
+        });
+      } catch (e) {
+        limitations.push(`Could not analyze ${ex.company_name}: ${(e as Error).message}`);
       }
-    };
 
-    await Promise.all(
-      Array.from({ length: Math.min(CONCURRENCY, exhibitors.length) }, () => worker()),
-    );
+      completed++;
+      await progress(
+        "enrich_leads",
+        `[${ev.event_name}] Analyzed ${completed}/${exhibitors.length} (${ex.company_name}) · ${concurrency} at a time`,
+      );
+    });
+
+
 
   }
 
