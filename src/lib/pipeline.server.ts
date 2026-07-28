@@ -1225,7 +1225,7 @@ TASK: Extract EXHIBITING COMPANIES from the source below for event "${ev.event_n
 Source URL: ${src.url}
 
 --- SOURCE MARKDOWN ---
-${src.markdown.slice(0, 30000)}`;
+${src.markdown.slice(0, 60000)}`;
 
       try {
         const exhibitorList = await withHeartbeat(
