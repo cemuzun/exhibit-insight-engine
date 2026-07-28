@@ -31,18 +31,46 @@ function labelFor(key: string) {
   return STAGES.find((s) => s.key === key)?.label ?? key;
 }
 
+export type RunCounters = {
+  discovered?: number;
+  filtered_too_soon?: number;
+  eligible?: number;
+  kept?: number;
+  deep_dive_total?: number;
+  deep_dive_done?: number;
+  exhibitors_found?: number;
+  leads_scored?: number;
+};
+
+function Stat({ label, value, tone }: { label: string; value: number | string; tone?: "muted" }) {
+  return (
+    <div className="rounded-md border border-border bg-background px-3 py-2">
+      <div className="font-mono text-lg leading-tight text-foreground">{value}</div>
+      <div className={`text-[10px] uppercase tracking-wide ${tone === "muted" ? "text-muted-foreground/70" : "text-muted-foreground"}`}>
+        {label}
+      </div>
+    </div>
+  );
+}
+
 export function RunProgress({
   stage,
   message,
   createdAt,
   updatedAt,
   stepLog = [],
+  counters = {},
+  liveEvents = 0,
+  liveLeads = 0,
 }: {
   stage: string | null;
   message: string | null;
   createdAt: string;
   updatedAt: string | null;
   stepLog?: StepEntry[];
+  counters?: RunCounters;
+  liveEvents?: number;
+  liveLeads?: number;
 }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -63,6 +91,18 @@ export function RunProgress({
 
   const totalKnown = stepLog.reduce((a, s) => a + (s.duration_ms ?? 0), 0);
 
+  const discovered = counters.discovered ?? 0;
+  const filtered = counters.filtered_too_soon ?? 0;
+  const kept = counters.kept ?? liveEvents;
+  const ddTotal = counters.deep_dive_total ?? 0;
+  const ddDone = counters.deep_dive_done ?? 0;
+  const leads = counters.leads_scored ?? liveLeads;
+  const exhibitors = counters.exhibitors_found ?? 0;
+
+  // Weighted overall completion: stage position blended with deep-dive progress.
+  const stagePct = ((idx + (idx >= 4 && ddTotal > 0 ? ddDone / ddTotal : 0.5)) / STAGES.length) * 100;
+  const overall = Math.min(99, Math.max(2, Math.round(stagePct)));
+
   return (
     <div className="mb-6 rounded-lg border border-border bg-card p-4">
       <div className="flex items-start gap-3">
@@ -80,9 +120,28 @@ export function RunProgress({
           <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-muted">
             <div
               className="h-full rounded-full bg-primary transition-all duration-700"
-              style={{ width: `${pct}%` }}
+              style={{ width: `${overall}%` }}
             />
           </div>
+          <div className="mt-1 text-right font-mono text-[10px] text-muted-foreground">{overall}%</div>
+
+          {(discovered > 0 || liveEvents > 0 || liveLeads > 0) && (
+            <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+              <Stat label="Shows found" value={discovered || liveEvents} />
+              <Stat label="Skipped (too soon)" value={filtered} tone="muted" />
+              <Stat label="Shows kept" value={kept} />
+              <Stat
+                label="Deep-dived"
+                value={ddTotal > 0 ? `${ddDone}/${ddTotal}` : ddDone}
+              />
+              <Stat label="Leads scored" value={leads} />
+            </div>
+          )}
+          {exhibitors > 0 && (
+            <div className="mt-2 text-[11px] text-muted-foreground">
+              {exhibitors} exhibitor{exhibitors === 1 ? "" : "s"} queued for scoring · {leads} scored so far
+            </div>
+          )}
 
           {stepLog.length > 0 ? (
             <ul className="mt-4 space-y-1.5">
