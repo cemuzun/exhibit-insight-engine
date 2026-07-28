@@ -246,7 +246,18 @@ function RunDetail() {
         />
       )}
 
-
+      <div className="mb-6">
+        <DebugPanel
+          shows={
+            (((run as { counters?: { show_debug?: unknown } }).counters?.show_debug ?? []) as ShowDebugEntry[])
+          }
+          skipReasons={(
+            ((run as { counters?: { scoring_feed?: unknown } }).counters?.scoring_feed ?? []) as ScoringFeedEntry[]
+          )
+            .filter((e) => e.status === "skipped")
+            .map((e) => ({ at: e.at, show: e.show, reason: e.reason }))}
+        />
+      </div>
 
 
       {!inProgress && (((run as { step_log?: unknown[] }).step_log ?? []) as StepEntry[]).length > 0 && (
