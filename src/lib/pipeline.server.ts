@@ -608,15 +608,32 @@ ${sourceLinks.slice(0, 80).join("\n")}`,
     }
   }
 
-  // Persist events
-  const eventRows = eventList.events
-    .sort((a, b) => b.event_opportunity_score - a.event_opportunity_score)
-    .slice(0, maxEvents);
-  if (eventList.events.length > eventRows.length) {
+  // Drop shows that are already over or too close to sell into (booth design,
+  // fabrication and shipping need lead time).
+  const minLeadDays = Math.max(0, Math.min(365, input.filters.minLeadTimeDays ?? 45));
+  const dated = eventList.events.map((e) => ({ event: e, leadDays: eventLeadTimeDays(e.start_date) }));
+  const tooSoon = dated.filter((d) => d.leadDays !== null && d.leadDays < minLeadDays);
+  const eligible = dated.filter((d) => d.leadDays === null || d.leadDays >= minLeadDays).map((d) => d.event);
+
+  if (tooSoon.length > 0) {
     limitations.push(
-      `Source listed ${eventList.events.length} shows; kept the top ${eventRows.length} by opportunity score.`,
+      `Skipped ${tooSoon.length} show(s) starting in under ${minLeadDays} days (or already past): ${tooSoon
+        .slice(0, 5)
+        .map((d) => d.event.event_name)
+        .join(", ")}${tooSoon.length > 5 ? "…" : ""}`,
     );
   }
+
+  // Persist events
+  const eventRows = eligible
+    .sort((a, b) => b.event_opportunity_score - a.event_opportunity_score)
+    .slice(0, maxEvents);
+  if (eligible.length > eventRows.length) {
+    limitations.push(
+      `Source listed ${eligible.length} eligible shows; kept the top ${eventRows.length} by opportunity score.`,
+    );
+  }
+
   const insertedEvents = await admin
     .from("events")
     .insert(
