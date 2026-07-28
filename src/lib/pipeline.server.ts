@@ -630,6 +630,18 @@ function guessExhibitorUrls(officialUrl: string): string[] {
 }
 
 
+/** Per-show extraction diagnostics surfaced in the run debug panel. */
+export type ShowDebugEntry = {
+  show: string;
+  official_url: string | null;
+  candidates: number;
+  accepted: string[];
+  rejected: Array<{ url: string; reason: string }>;
+  pages: Array<{ url: string; added: number }>;
+  exhibitors: number;
+  skip_reason: string | null;
+};
+
 /** Per-show diagnostics captured while hunting for exhibitor sources. */
 export type SourceDiag = {
   /** Every URL that was considered as a possible exhibitor list. */
