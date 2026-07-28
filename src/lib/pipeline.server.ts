@@ -5,6 +5,8 @@ import { firecrawlMap, firecrawlScrape, firecrawlSearch } from "./firecrawl.serv
 import { recentCachedScrapesForHost } from "./firecrawl-cache.server";
 import { isLikelyCompanyName, normalizedCompanyKey, parseExhibitorsFromMarkdown } from "./exhibitor-parser";
 import { validateExhibitorRow } from "./exhibitor-validation";
+import { fetchMapYourShowExhibitors, isMapYourShowUrl } from "./mapyourshow.server";
+
 
 import {
   guarded,
@@ -1884,8 +1886,39 @@ ${sourceLinks.slice(0, 80).join("\n")}`,
       await saveDebug();
     };
 
+    // MapYourShow directories (IMTS, PACK EXPO, …) render nothing server-side.
+    // Pull the full A–Z list from the same JSON endpoint their SPA uses.
+    const mysUrl = [ev.official_url, ...sources.map((s) => s.url)].find(
+      (u): u is string => typeof u === "string" && isMapYourShowUrl(u),
+    );
+    if (mysUrl) {
+      try {
+        const mys = await withHeartbeat(
+          "extract_exhibitors",
+          `Reading full exhibitor directory for ${ev.event_name}`,
+          () => fetchMapYourShowExhibitors(mysUrl, { max: unlimitedLeads ? 0 : Math.max(requestedLeads, 500) }),
+        );
+        if (mys) {
+          const src = { url: mys.url, markdown: mys.markdown };
+          const added = addCandidateExhibitors(mys.exhibitors, src, "HTML");
+          await recordPageParsed(src.url, added);
+          await pushScoringEntry({
+            at: new Date().toISOString(),
+            company: mys.exhibitors[0]?.company_name ?? "—",
+            show: ev.event_name,
+            status: "scored",
+            reason: `Found ${mys.exhibitors.length} exhibitor(s) from the show directory index`,
+          });
+          sources = [src, ...sources];
+        }
+      } catch (e) {
+        limitations.push(`Directory index read failed for ${ev.event_name}: ${(e as Error).message}`);
+      }
+    }
 
-    for (const src of sources) {
+    for (const src of exhibitors.length >= maxLeads ? [] : sources) {
+      if (src.markdown.startsWith("# Exhibitor directory (")) continue;
+
       const deterministic = parseExhibitorsFromMarkdown(src.markdown, src.url, extractBatch);
       if (deterministic.length > 0) {
         const added = addCandidateExhibitors(deterministic, src, /\.pdf($|\?)/i.test(src.url) ? "PDF" : "HTML");
