@@ -1329,20 +1329,33 @@ ${sourceLinks.slice(0, 80).join("\n")}`,
       }
     }
 
-    // Try each candidate source until one actually yields exhibitors.
+    // Try each candidate source until enough exhibitors are found. Detail pages
+    // produce one company each, while listing pages can produce many.
     let exhibitors: import("zod").infer<typeof ExhibitorListSchema>["exhibitors"] = [];
+    const addCandidateExhibitors = (items: typeof exhibitors) => {
+      const seen = new Set(exhibitors.map((item) => normalizedCompanyKey(item.company_name)));
+      for (const item of items) {
+        const key = normalizedCompanyKey(item.company_name);
+        if (!key || seen.has(key)) continue;
+        exhibitors.push(item);
+        seen.add(key);
+        if (exhibitors.length >= maxLeads) break;
+      }
+    };
+
     for (const src of sources) {
       const deterministic = parseExhibitorsFromMarkdown(src.markdown, src.url, maxLeads * 2);
       if (deterministic.length > 0) {
-        exhibitors = deterministic.slice(0, maxLeads);
+        addCandidateExhibitors(deterministic);
         await pushScoringEntry({
           at: new Date().toISOString(),
-          company: exhibitors[0]?.company_name ?? "—",
+          company: deterministic[0]?.company_name ?? "—",
           show: ev.event_name,
           status: "scored",
-          reason: `Found ${exhibitors.length} exhibitor(s) directly from ${new URL(src.url).hostname}`,
+          reason: `Found ${deterministic.length} exhibitor(s) directly from ${new URL(src.url).hostname}`,
         });
-        break;
+        if (exhibitors.length >= maxLeads) break;
+        continue;
       }
 
       const exhibitorPrompt = `${CORE_SYSTEM}
@@ -1365,13 +1378,15 @@ ${src.markdown.slice(0, 60000)}`;
         }
         limitations.push(...(exhibitorList.limitations ?? []));
         if (exhibitorList.exhibitors.length > 0) {
-          exhibitors = exhibitorList.exhibitors.slice(0, maxLeads);
-          break;
+          addCandidateExhibitors(exhibitorList.exhibitors);
+          if (exhibitors.length >= maxLeads) break;
         }
       } catch (e) {
         limitations.push(`Exhibitor extraction failed for ${ev.event_name}: ${(e as Error).message}`);
       }
     }
+
+    exhibitors = exhibitors.slice(0, maxLeads);
 
     if (exhibitors.length === 0) {
       limitations.push(`No exhibitors could be extracted for ${ev.event_name}.`);
