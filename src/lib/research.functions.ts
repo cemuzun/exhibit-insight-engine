@@ -80,6 +80,63 @@ export const runResearch = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+export const rerunResearch = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) => z.object({ runId: z.string().uuid() }).parse(input))
+  .handler(async ({ data, context }) => {
+    const { data: run, error } = await context.supabase
+      .from("research_runs")
+      .select("*")
+      .eq("id", data.runId)
+      .maybeSingle();
+    if (error || !run) throw new Error("Run not found");
+
+    // Clear prior results and reset the run before re-running the pipeline.
+    await context.supabase.from("leads").delete().eq("run_id", data.runId);
+    await context.supabase.from("events").delete().eq("run_id", data.runId);
+    const { error: resetErr } = await context.supabase
+      .from("research_runs")
+      .update({
+        status: "queued",
+        stage: "queued",
+        progress_message: "Re-running research",
+        error_message: null,
+        executive_summary: null,
+        completed_at: null,
+      })
+      .eq("id", data.runId);
+    if (resetErr) throw new Error(resetErr.message);
+
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { runPipeline } = await import("./pipeline.server");
+
+    try {
+      await runPipeline(
+        data.runId,
+        {
+          inputUrl: run.input_url,
+          targetMarket: run.target_market,
+          filters: (run.filters ?? {}) as {
+            minProjectValue?: number;
+            maxLeadsPerShow?: number;
+            priorityIndustries?: string[];
+            targetServices?: string[];
+          },
+        },
+        supabaseAdmin,
+      );
+    } catch (e) {
+      await supabaseAdmin
+        .from("research_runs")
+        .update({ status: "failed", error_message: (e as Error).message })
+        .eq("id", data.runId);
+      throw e;
+    }
+    return { ok: true };
+  });
+
+
+
 export const listRuns = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
