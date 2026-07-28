@@ -193,6 +193,8 @@ function RunDetail() {
   } | null;
 
   const inProgress = run.status !== "complete" && run.status !== "failed";
+  const scoringEntries = (((run as { counters?: { scoring_feed?: unknown } }).counters
+    ?.scoring_feed ?? []) as ScoringFeedEntry[]);
 
   return (
     <main className="mx-auto max-w-7xl px-6 py-8">
