@@ -1,0 +1,15 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "packageRules": [
+    {
+      "description": "Keep AI SDK packages pinned and require explicit dashboard approval before bumping",
+      "matchPackageNames": ["ai", "@ai-sdk/openai-compatible"],
+      "dependencyDashboardApproval": true,
+      "rangeStrategy": "pin",
+      "groupName": "AI SDK pinned packages"
+    }
+  ],
+  "dependencyDashboard": true,
+  "lockFileMaintenance": { "enabled": true }
+}
