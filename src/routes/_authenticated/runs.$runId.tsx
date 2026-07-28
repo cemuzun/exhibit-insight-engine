@@ -11,6 +11,8 @@ import { ScoringFeed, type ScoringFeedEntry } from "@/components/ScoringFeed";
 
 import { ExhibitorsTable, type ExhibitorRow } from "@/components/ExhibitorsTable";
 import { LiveExhibitors, type ExhibitorSample } from "@/components/LiveExhibitors";
+import { ShowsExplorer, type ExplorerEvent, type ExplorerLead } from "@/components/ShowsExplorer";
+
 import {
   ResultFilters,
   DEFAULT_FILTERS,
@@ -406,7 +408,14 @@ function DashboardView({
         </div>
       )}
 
+      <ShowsExplorer
+        events={events as unknown as ExplorerEvent[]}
+        leads={leads as unknown as ExplorerLead[]}
+        onSelect={(l) => onSelect(l as unknown as Lead)}
+      />
+
       <h2 className="mt-8 mb-3 text-sm font-semibold uppercase tracking-wider text-muted-foreground">Ranked opportunities</h2>
+
       <div className="rounded-lg border border-border bg-card overflow-hidden">
         <table className="w-full text-sm">
           <thead className="border-b border-border text-left text-xs uppercase tracking-wider text-muted-foreground">
