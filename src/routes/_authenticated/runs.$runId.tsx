@@ -10,6 +10,7 @@ import { RunProgress, type StepEntry, type RunCounters } from "@/components/RunP
 import { ScoringFeed, type ScoringFeedEntry } from "@/components/ScoringFeed";
 
 import { ExhibitorsTable, type ExhibitorRow } from "@/components/ExhibitorsTable";
+import { LiveExhibitors, type ExhibitorSample } from "@/components/LiveExhibitors";
 import {
   ResultFilters,
   DEFAULT_FILTERS,
