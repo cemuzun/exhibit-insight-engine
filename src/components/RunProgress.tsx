@@ -9,10 +9,26 @@ const STAGES = [
   { key: "summarize", label: "Executive summary" },
 ];
 
+export type StepEntry = {
+  key: string;
+  started_at: string;
+  ended_at: string | null;
+  duration_ms: number | null;
+  message: string | null;
+};
+
 function fmt(sec: number) {
   const m = Math.floor(sec / 60);
   const s = sec % 60;
   return m > 0 ? `${m}m ${String(s).padStart(2, "0")}s` : `${s}s`;
+}
+
+function fmtMs(ms: number) {
+  return fmt(Math.max(0, Math.round(ms / 1000)));
+}
+
+function labelFor(key: string) {
+  return STAGES.find((s) => s.key === key)?.label ?? key;
 }
 
 export function RunProgress({
@@ -20,11 +36,13 @@ export function RunProgress({
   message,
   createdAt,
   updatedAt,
+  stepLog = [],
 }: {
   stage: string | null;
   message: string | null;
   createdAt: string;
   updatedAt: string | null;
+  stepLog?: StepEntry[];
 }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -42,6 +60,8 @@ export function RunProgress({
   if (idx < 0) idx = 0;
   const pct = Math.round(((idx + 0.5) / STAGES.length) * 100);
   const slow = sinceUpdate !== null && sinceUpdate > 45;
+
+  const totalKnown = stepLog.reduce((a, s) => a + (s.duration_ms ?? 0), 0);
 
   return (
     <div className="mb-6 rounded-lg border border-border bg-card p-4">
@@ -64,28 +84,55 @@ export function RunProgress({
             />
           </div>
 
-          <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[11px]">
-            {STAGES.map((s, i) => (
-              <span
-                key={s.key}
-                className={
-                  i < idx
-                    ? "text-muted-foreground line-through"
-                    : i === idx
-                      ? "font-medium text-foreground"
-                      : "text-muted-foreground/60"
-                }
-              >
-                {i < idx ? "✓ " : i === idx ? "▸ " : "· "}
-                {s.label}
-              </span>
-            ))}
-          </div>
+          {stepLog.length > 0 ? (
+            <ul className="mt-4 space-y-1.5">
+              {stepLog.map((s, i) => {
+                const running = !s.ended_at;
+                const ms = s.duration_ms ?? now - new Date(s.started_at).getTime();
+                const share = totalKnown > 0 && s.duration_ms ? Math.round((s.duration_ms / totalKnown) * 100) : null;
+                return (
+                  <li key={`${s.key}-${i}`} className="flex items-baseline gap-2 text-[11px]">
+                    <span className={running ? "text-primary" : "text-muted-foreground"}>
+                      {running ? "▸" : "✓"}
+                    </span>
+                    <span className={running ? "font-medium text-foreground" : "text-muted-foreground"}>
+                      {labelFor(s.key)}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-muted-foreground/70">
+                      {s.message ?? ""}
+                    </span>
+                    <span className="shrink-0 font-mono text-muted-foreground">
+                      {fmtMs(ms)}
+                      {share !== null && <span className="text-muted-foreground/60"> · {share}%</span>}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[11px]">
+              {STAGES.map((s, i) => (
+                <span
+                  key={s.key}
+                  className={
+                    i < idx
+                      ? "text-muted-foreground line-through"
+                      : i === idx
+                        ? "font-medium text-foreground"
+                        : "text-muted-foreground/60"
+                  }
+                >
+                  {i < idx ? "✓ " : i === idx ? "▸ " : "· "}
+                  {s.label}
+                </span>
+              ))}
+            </div>
+          )}
 
           <p className="mt-3 text-[11px] text-muted-foreground">
             {slow
               ? "This step is taking a while — deep research on large directories can run several minutes. The page updates automatically."
-              : "This page refreshes automatically every few seconds. You can safely leave and come back."}
+              : "This page updates live as each step completes. You can safely leave and come back."}
           </p>
         </div>
       </div>
