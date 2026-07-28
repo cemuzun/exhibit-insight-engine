@@ -1452,16 +1452,30 @@ ${sourceLinks.slice(0, 80).join("\n")}`,
 
   // ---------------------------------------------------------------------
   // Phase 1 — official-site verification and 8-component event scoring.
-  // No exhibitor work happens on an event that fails this gate.
+  // Verification is expensive (scrape + model call per show), so it only runs
+  // on the ranked candidate pool we could actually deep-dive.
   // ---------------------------------------------------------------------
-  await progress("verify_events", `Verifying ${eventsInDb.length} show(s) against their official sites`);
+  const plannedDeepDive = input.filters.maxDeepDiveShows ?? (eventList.is_directory ? 12 : 1);
+  const verifyPool =
+    plannedDeepDive === 0
+      ? eventsInDb
+      : eventsInDb.slice(0, Math.max(plannedDeepDive * 3, 30));
+  if (eventsInDb.length > verifyPool.length) {
+    limitations.push(
+      `Verified the top ${verifyPool.length} of ${eventsInDb.length} shows by opportunity score (enough to fill ${plannedDeepDive} deep-dive slots).`,
+    );
+  }
+
+  await progress("verify_events", `Verifying ${verifyPool.length} show(s) against their official sites`);
 
   const allowUnverified = input.filters.allowUnverifiedEvents === true;
   const verificationLog: PipelineLogEntry[] = [];
   let verifiedCount = 0;
   let excludedCount = 0;
+  let verifyDone = 0;
 
-  const verified = await mapPool(eventsInDb, Math.min(4, concurrency), async (ev) => {
+  const verified = await mapPool(verifyPool, Math.min(4, concurrency), async (ev) => {
+
     const started = Date.now();
     const { verification, extras } = await verifyEvent({
       eventName: ev.event_name,
