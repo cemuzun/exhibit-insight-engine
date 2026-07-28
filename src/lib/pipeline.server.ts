@@ -121,12 +121,55 @@ export async function runPipeline(
   },
   admin: SupabaseClient,
 ) {
+  // Per-step timing log so the UI can show where time is going.
+  type StepEntry = {
+    key: string;
+    started_at: string;
+    ended_at: string | null;
+    duration_ms: number | null;
+    message: string | null;
+  };
+  const stepLog: StepEntry[] = [];
+
   const progress: ProgressFn = async (stage, message) => {
+    const nowIso = new Date().toISOString();
+    const last = stepLog[stepLog.length - 1];
+    if (last && last.key === stage) {
+      last.message = message;
+    } else {
+      if (last && !last.ended_at) {
+        last.ended_at = nowIso;
+        last.duration_ms = new Date(nowIso).getTime() - new Date(last.started_at).getTime();
+      }
+      stepLog.push({
+        key: stage,
+        started_at: nowIso,
+        ended_at: null,
+        duration_ms: null,
+        message,
+      });
+    }
+
     await admin
       .from("research_runs")
-      .update({ stage, progress_message: message, updated_at: new Date().toISOString() })
+      .update({
+        stage,
+        progress_message: message,
+        step_log: stepLog,
+        updated_at: nowIso,
+      })
       .eq("id", runId);
   };
+
+  const finishSteps = async () => {
+    const last = stepLog[stepLog.length - 1];
+    if (last && !last.ended_at) {
+      const nowIso = new Date().toISOString();
+      last.ended_at = nowIso;
+      last.duration_ms = new Date(nowIso).getTime() - new Date(last.started_at).getTime();
+    }
+  };
+
 
   const limitations: string[] = [];
   const key = requireLovableKey();
@@ -176,10 +219,12 @@ ${sourceLinks.slice(0, 80).join("\n")}`;
     } else {
       limitations.push(`Event extraction failed: ${(e as Error).message}`);
     }
+    await finishSteps();
     await admin.from("research_runs").update({
       status: "failed",
       error_message: (e as Error).message,
       limitations,
+      step_log: stepLog,
     }).eq("id", runId);
     return;
   }
@@ -448,6 +493,7 @@ Limitations: ${limitations.slice(0, 10).join(" | ")}`;
     // fall back to computed
   }
 
+  await finishSteps();
   await admin
     .from("research_runs")
     .update({
@@ -456,6 +502,7 @@ Limitations: ${limitations.slice(0, 10).join(" | ")}`;
       progress_message: "Done",
       executive_summary: execSummary,
       limitations,
+      step_log: stepLog,
       completed_at: new Date().toISOString(),
     })
     .eq("id", runId);

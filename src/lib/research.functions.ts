@@ -102,6 +102,7 @@ export const rerunResearch = createServerFn({ method: "POST" })
         progress_message: "Re-running research",
         error_message: null,
         executive_summary: null,
+        step_log: [],
         completed_at: null,
       })
       .eq("id", data.runId);

@@ -1,11 +1,12 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
+import { supabase } from "@/integrations/supabase/client";
 import { getRun, rerunResearch } from "@/lib/research.functions";
 import { syncRunToCrm } from "@/lib/crm.functions";
 import { CrmSyncPreview } from "@/components/CrmSyncPreview";
-import { RunProgress } from "@/components/RunProgress";
+import { RunProgress, RunTimings, type StepEntry } from "@/components/RunProgress";
 
 import { listEmailTemplates } from "@/lib/templates.functions";
 import { renderForLead, type EmailTemplate } from "@/lib/email-template-engine";
@@ -73,6 +74,7 @@ function RunDetail() {
   const [mode, setMode] = useState<"dashboard" | "report">("dashboard");
   const [selected, setSelected] = useState<Lead | null>(null);
 
+  const queryClient = useQueryClient();
   const { data, isLoading } = useQuery({
     queryKey: ["run", runId],
     queryFn: () => get({ data: { runId } }),
@@ -81,6 +83,24 @@ function RunDetail() {
       return s === "complete" || s === "failed" ? false : 3000;
     },
   });
+
+  // Live push updates for step-by-step progress.
+  useEffect(() => {
+    const channel = supabase
+      .channel(`run-${runId}`)
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "research_runs", filter: `id=eq.${runId}` },
+        () => {
+          queryClient.invalidateQueries({ queryKey: ["run", runId] });
+        },
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [runId, queryClient]);
+
 
   if (isLoading || !data) return <main className="mx-auto max-w-7xl px-6 py-8"><p className="text-sm text-muted-foreground">Loading…</p></main>;
 
@@ -143,8 +163,14 @@ function RunDetail() {
           message={run.progress_message ?? null}
           createdAt={run.created_at}
           updatedAt={(run as { updated_at?: string }).updated_at ?? null}
+          stepLog={((run as { step_log?: unknown }).step_log ?? []) as StepEntry[]}
         />
       )}
+
+      {!inProgress && (((run as { step_log?: unknown[] }).step_log ?? []) as StepEntry[]).length > 0 && (
+        <RunTimings stepLog={((run as { step_log?: unknown }).step_log ?? []) as StepEntry[]} />
+      )}
+
 
 
       {run.status === "failed" && (

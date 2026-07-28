@@ -342,6 +342,7 @@ export type Database = {
           progress_message: string | null
           stage: string | null
           status: string
+          step_log: Json
           target_market: string | null
           updated_at: string
           user_id: string
@@ -359,6 +360,7 @@ export type Database = {
           progress_message?: string | null
           stage?: string | null
           status?: string
+          step_log?: Json
           target_market?: string | null
           updated_at?: string
           user_id: string
@@ -376,6 +378,7 @@ export type Database = {
           progress_message?: string | null
           stage?: string | null
           status?: string
+          step_log?: Json
           target_market?: string | null
           updated_at?: string
           user_id?: string
