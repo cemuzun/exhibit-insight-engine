@@ -6,14 +6,14 @@
  * be tuned without a code change:
  *
  *   FIRECRAWL_CONCURRENCY        (default 3)   max in-flight Firecrawl calls
- *   FIRECRAWL_RPM                (default 60)  max Firecrawl calls per minute
- *   FIRECRAWL_MAX_RETRIES        (default 4)
+ *   FIRECRAWL_RPM                (default 40)  max Firecrawl calls per minute
+ *   FIRECRAWL_MAX_RETRIES        (default 6)
  *   LLM_CONCURRENCY              (default 4)   max in-flight model calls
  *   LLM_RPM                      (default 120) max model calls per minute
  *   LLM_MAX_RETRIES              (default 4)
  *   ENRICH_CONCURRENCY           (default 5)   parallel exhibitors per event
  *   RETRY_BASE_DELAY_MS          (default 800)
- *   RETRY_MAX_DELAY_MS           (default 20000)
+ *   RETRY_MAX_DELAY_MS           (default 70000)
  */
 
 function num(name: string, fallback: number): number {
@@ -33,6 +33,8 @@ export class RateLimiter {
   private active = 0;
   private queue: Array<() => void> = [];
   private timestamps: number[] = [];
+  /** Hard global pause (epoch ms) applied when the provider reports a reset time. */
+  private pausedUntil = 0;
 
   constructor(
     public readonly name: string,
@@ -65,6 +67,19 @@ export class RateLimiter {
     if (next) next();
   }
 
+  /** Pause every request in this limiter until the given epoch ms. */
+  pauseUntil(ts: number) {
+    if (ts > this.pausedUntil) this.pausedUntil = ts;
+  }
+
+  private async waitForPause(): Promise<void> {
+    for (;;) {
+      const wait = this.pausedUntil - Date.now();
+      if (wait <= 0) return;
+      await sleep(Math.min(wait, 5_000));
+    }
+  }
+
   /** Wait until another request fits inside the rolling per-minute window. */
   private async waitForWindow(): Promise<void> {
     for (;;) {
@@ -82,6 +97,7 @@ export class RateLimiter {
   async run<T>(fn: () => Promise<T>): Promise<T> {
     await this.acquireSlot();
     try {
+      await this.waitForPause();
       await this.waitForWindow();
       return await fn();
     } finally {
@@ -137,7 +153,7 @@ export function retryAfterMsOf(error: unknown): number | undefined {
 }
 
 const BASE_DELAY = () => num("RETRY_BASE_DELAY_MS", 800);
-const MAX_DELAY = () => num("RETRY_MAX_DELAY_MS", 20_000);
+const MAX_DELAY = () => num("RETRY_MAX_DELAY_MS", 70_000);
 
 /** Exponential backoff with full jitter, honouring Retry-After when present. */
 export function backoffDelay(attempt: number, retryAfterMs?: number): number {
@@ -184,13 +200,20 @@ export async function guarded<T>(
     maxRetries: limiter.maxRetries,
     label: limiter.name,
     ...opts,
+    onRetry: (info) => {
+      // A provider-reported reset time pauses the whole limiter, so parallel
+      // workers stop hammering the API until the window actually resets.
+      const ra = retryAfterMsOf(info.error);
+      if (ra && ra > 0) limiter.pauseUntil(Date.now() + Math.min(ra, 120_000));
+      opts.onRetry?.(info);
+    },
   });
 }
 
 export const firecrawlLimiter = new RateLimiter("firecrawl", {
   concurrency: num("FIRECRAWL_CONCURRENCY", 3),
-  requestsPerMinute: num("FIRECRAWL_RPM", 60),
-  maxRetries: num("FIRECRAWL_MAX_RETRIES", 4),
+  requestsPerMinute: num("FIRECRAWL_RPM", 40),
+  maxRetries: num("FIRECRAWL_MAX_RETRIES", 6),
 });
 
 export const llmLimiter = new RateLimiter("llm", {
