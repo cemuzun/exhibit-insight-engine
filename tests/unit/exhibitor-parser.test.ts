@@ -53,3 +53,31 @@ Add to Planner
     expect(exhibitors.map((item) => item.company_name)).toEqual(["SCHUNK", "Hennig, Inc."]);
   });
 });
+describe("plain list (PDF) exhibitor extraction", () => {
+  const pdfMarkdown = [
+    "as of July 1, 2026",
+    "",
+    "# Exhibitors",
+    "",
+    "The Acheson Group",
+    "Admeo, Inc.",
+    "American Green Spring Diagnostics",
+    "Inc.",
+    "Weber Scientific",
+    "Xcluder Rodent & Pest Defense",
+  ].join("\n");
+
+  it("extracts company names and rejoins wrapped lines", () => {
+    const rows = parseExhibitorsFromPlainList(pdfMarkdown, 100);
+    const names = rows.map((r) => r.company_name);
+    expect(names).toContain("The Acheson Group");
+    expect(names).toContain("American Green Spring Diagnostics Inc.");
+    expect(names).not.toContain("Exhibitors");
+    expect(names).not.toContain("as of July 1, 2026");
+  });
+
+  it("falls back to plain list parsing from markdown", () => {
+    const rows = parseExhibitorsFromMarkdown(pdfMarkdown, "https://x.org/list.pdf", 100);
+    expect(rows.length).toBeGreaterThanOrEqual(4);
+  });
+});
