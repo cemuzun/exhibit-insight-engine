@@ -1,7 +1,7 @@
 import { generateText, Output, NoObjectGeneratedError } from "ai";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createLovableAiGatewayProvider, requireLovableKey } from "./ai-gateway.server";
-import { firecrawlScrape, firecrawlSearch } from "./firecrawl.server";
+import { firecrawlMap, firecrawlScrape, firecrawlSearch } from "./firecrawl.server";
 import { recentCachedScrapesForHost } from "./firecrawl-cache.server";
 import { normalizedCompanyKey, parseExhibitorsFromMarkdown } from "./exhibitor-parser";
 import {
@@ -612,6 +612,14 @@ function guessExhibitorUrls(officialUrl: string): string[] {
     const urls = EXHIBITOR_PATH_GUESSES.map((p) =>
       new URL(p, `${base.protocol}//${base.host}`).toString(),
     );
+    // Many association sites nest the list under the event path
+    // (e.g. /annualmeeting/exhibits/exhibitor-list).
+    const eventPath = base.pathname.replace(/\/+$/, "");
+    if (eventPath && eventPath !== "") {
+      for (const p of ["/exhibits", "/exhibits/exhibitor-list", "/exhibitors", ...EXHIBITOR_PATH_GUESSES]) {
+        urls.push(new URL(`${eventPath}${p}`, `${base.protocol}//${base.host}`).toString());
+      }
+    }
     for (const p of DIRECTORY_HOST_GUESSES) {
       urls.push(new URL(p, `https://directory.${apex}`).toString());
     }
@@ -670,6 +678,20 @@ async function findExhibitorSources(
         push(r.url);
         searchHits.add(r.url);
       }
+    }
+  }
+
+  // Sites that block crawlers on their exhibits page still expose the list
+  // through the site index — this is usually where a PDF exhibitor list lives.
+  if (!outOfTime()) {
+    try {
+      const origin = new URL(officialUrl).origin;
+      for (const term of ["exhibitor list", "exhibitors"]) {
+        const mapped = await firecrawlMap(origin, { search: term, limit: 60 });
+        for (const u of mapped) if (scoreCandidate(u) > 0) push(u);
+      }
+    } catch {
+      // mapping is best-effort
     }
   }
 

@@ -106,6 +106,27 @@ export async function firecrawlScrape(
   };
 }
 
+/**
+ * Fast URL discovery for a site. Surfaces deep pages (and PDFs) that are never
+ * linked from the event homepage — often the only path to an exhibitor list.
+ */
+export async function firecrawlMap(
+  url: string,
+  opts?: { search?: string; limit?: number; cache?: CacheOptions },
+): Promise<string[]> {
+  const payload = { url, search: opts?.search, limit: opts?.limit ?? 100 };
+  const { value: body } = await withCache<{ links?: unknown; data?: { links?: unknown } } | null>(
+    "map",
+    payload,
+    () => firecrawlPost<{ links?: unknown; data?: { links?: unknown } } | null>("/map", payload, "map"),
+    opts?.cache ?? {},
+  );
+  const raw = (body?.links ?? body?.data?.links ?? []) as Array<string | { url?: string }>;
+  return raw
+    .map((l) => (typeof l === "string" ? l : l?.url))
+    .filter((u): u is string => typeof u === "string" && /^https?:\/\//i.test(u));
+}
+
 export async function firecrawlSearch(
   query: string,
   opts?: { limit?: number; scrapeMarkdown?: boolean; cache?: CacheOptions },
