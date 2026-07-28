@@ -534,14 +534,27 @@ const EXHIBITOR_LINK_RE =
 const EXHIBITOR_NEGATIVE_RE =
   /prospectus|sponsor|become[-_/]?an?[-_/]?exhibitor|why[-_/]?exhibit|faq|service[-_/]?manual|resources?|contact|pricing|rates|\.pdf($|\?)/i;
 
-/** Directory platforms that reliably host real exhibitor lists. */
-const EXHIBITOR_PLATFORM_RE = /mapyourshow|a2zinc|expocad|swapcard|eventscribe|10times\.com\/.+\/exhibitors/i;
+/**
+ * Directory platforms that reliably host real exhibitor lists. Many shows put
+ * these on a `directory.<show>.com` subdomain with opaque `.cfm` paths that
+ * contain no "exhibitor" keyword at all, so match the platform shape too.
+ */
+const EXHIBITOR_PLATFORM_RE =
+  /mapyourshow|a2zinc|expocad|swapcard|eventscribe|exhibitor-alphalist|10times\.com\/.+\/exhibitors|\/\d+_\d+\/(explore|exhibitor|exhview)\b/i;
+
+/** A `directory.` / `exhibitors.` host is itself strong evidence. */
+const DIRECTORY_HOST_RE = /^(directory|exhibitors?|directory\d*)\./i;
 
 function scoreCandidate(url: string): number {
   let score = 0;
   if (EXHIBITOR_PLATFORM_RE.test(url)) score += 6;
   if (/exhibitor[-_/]?(list|directory|search)|exhibitor-?directory|who-?s-?exhibiting/i.test(url)) score += 4;
   if (/\/exhibitors?\/?($|\?)/i.test(url)) score += 2;
+  try {
+    if (DIRECTORY_HOST_RE.test(new URL(url).hostname)) score += 4;
+  } catch {
+    /* ignore unparseable urls */
+  }
   if (EXHIBITOR_NEGATIVE_RE.test(url)) score -= 5;
   return score;
 }
@@ -559,6 +572,16 @@ function looksLikeExhibitorContent(markdown: string): boolean {
   return boothHits >= 3 || companyish >= 8 || (companyish >= 4 && linkLines >= 20);
 }
 
+/**
+ * Directory platforms bury the company list under a long filter/nav header.
+ * Start the slice at the results section so the model's context window is
+ * spent on companies rather than square-footage checkboxes.
+ */
+function trimToListing(markdown: string): string {
+  const m = /(#+\s*(results|featured exhibitors|exhibitor list|all exhibitors)|^\s*A\s*\|\s*B\s*\|)/im.exec(markdown);
+  return m && m.index > 500 ? markdown.slice(m.index) : markdown;
+}
+
 /** Common exhibitor-directory paths to try when a site exposes no obvious link. */
 const EXHIBITOR_PATH_GUESSES = [
   "/exhibitor-list",
@@ -568,14 +591,28 @@ const EXHIBITOR_PATH_GUESSES = [
   "/exhibitors",
 ];
 
+/** MapYourShow-hosted directories follow a fixed shape on a `directory.` host. */
+const DIRECTORY_HOST_GUESSES = [
+  "/8_0/explore/exhibitor-alphalist.cfm",
+  "/exhibitor-alphalist.cfm",
+];
+
 function guessExhibitorUrls(officialUrl: string): string[] {
   try {
     const base = new URL(officialUrl);
-    return EXHIBITOR_PATH_GUESSES.map((p) => new URL(p, `${base.protocol}//${base.host}`).toString());
+    const apex = base.host.replace(/^www\./i, "");
+    const urls = EXHIBITOR_PATH_GUESSES.map((p) =>
+      new URL(p, `${base.protocol}//${base.host}`).toString(),
+    );
+    for (const p of DIRECTORY_HOST_GUESSES) {
+      urls.push(new URL(p, `https://directory.${apex}`).toString());
+    }
+    return urls;
   } catch {
     return [];
   }
 }
+
 
 /**
  * Event homepages almost never list exhibitors, and "exhibitor resources"
