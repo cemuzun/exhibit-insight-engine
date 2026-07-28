@@ -75,6 +75,12 @@ export const runResearch = createServerFn({ method: "POST" })
         .from("research_runs")
         .update({ status: "failed", error_message: (e as Error).message })
         .eq("id", data.runId);
+      const { notifyRunFailure } = await import("./notifications.server");
+      await notifyRunFailure(supabaseAdmin, {
+        runId: data.runId,
+        userId: context.userId,
+        errorMessage: (e as Error).message,
+      });
       throw e;
     }
     return { ok: true };
@@ -131,6 +137,12 @@ export const rerunResearch = createServerFn({ method: "POST" })
         .from("research_runs")
         .update({ status: "failed", error_message: (e as Error).message })
         .eq("id", data.runId);
+      const { notifyRunFailure } = await import("./notifications.server");
+      await notifyRunFailure(supabaseAdmin, {
+        runId: data.runId,
+        userId: context.userId,
+        errorMessage: (e as Error).message,
+      });
       throw e;
     }
     return { ok: true };

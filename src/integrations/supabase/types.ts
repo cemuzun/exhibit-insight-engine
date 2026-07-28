@@ -337,6 +337,56 @@ export type Database = {
           },
         ]
       }
+      notifications: {
+        Row: {
+          body: string | null
+          created_at: string
+          email_status: string
+          id: string
+          last_step: string | null
+          last_step_message: string | null
+          read_at: string | null
+          run_id: string | null
+          title: string
+          type: string
+          user_id: string
+        }
+        Insert: {
+          body?: string | null
+          created_at?: string
+          email_status?: string
+          id?: string
+          last_step?: string | null
+          last_step_message?: string | null
+          read_at?: string | null
+          run_id?: string | null
+          title: string
+          type?: string
+          user_id: string
+        }
+        Update: {
+          body?: string | null
+          created_at?: string
+          email_status?: string
+          id?: string
+          last_step?: string | null
+          last_step_message?: string | null
+          read_at?: string | null
+          run_id?: string | null
+          title?: string
+          type?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notifications_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "research_runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           created_at: string
