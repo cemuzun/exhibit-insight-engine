@@ -185,7 +185,31 @@ function extractEventsFromMarkdownDirectory(
   return events;
 }
 
+const US_STATES = new Set(
+  ("alabama,alaska,arizona,arkansas,california,colorado,connecticut,delaware,florida,georgia,hawaii,idaho,illinois," +
+    "indiana,iowa,kansas,kentucky,louisiana,maine,maryland,massachusetts,michigan,minnesota,mississippi,missouri," +
+    "montana,nebraska,nevada,new hampshire,new jersey,new mexico,new york,north carolina,north dakota,ohio,oklahoma," +
+    "oregon,pennsylvania,rhode island,south carolina,south dakota,tennessee,texas,utah,vermont,virginia,washington," +
+    "west virginia,wisconsin,wyoming,district of columbia,washington dc,puerto rico," +
+    "al,ak,az,ar,ca,co,ct,de,fl,ga,hi,id,il,in,ia,ks,ky,la,me,md,ma,mi,mn,ms,mo,mt,ne,nv,nh,nj,nm,ny,nc,nd,oh,ok," +
+    "or,pa,ri,sc,sd,tn,tx,ut,vt,va,wa,wv,wi,wy,dc,pr").split(","),
+);
+
+const US_COUNTRY_RE = /^(usa|u\.?s\.?a?\.?|united states( of america)?|america)$/i;
+
+/** Keep only shows that take place in the United States. */
+export function isUsEvent(e: Pick<EventRecord, "country" | "state" | "city">): boolean {
+  const country = (e.country ?? "").trim();
+  if (country) return US_COUNTRY_RE.test(country);
+  const state = (e.state ?? "").trim().toLowerCase().replace(/\./g, "");
+  if (state) return US_STATES.has(state);
+  const city = (e.city ?? "").trim().toLowerCase();
+  if (!city) return false; // unknown location — not provably USA
+  return city.split(/[\s,]+/).some((part) => US_STATES.has(part));
+}
+
 function dedupeEvents(events: EventRecord[]): EventRecord[] {
+
   const seen = new Map<string, EventRecord>();
   for (const e of events) {
     const key = `${e.event_name.toLowerCase().trim()}|${(e.official_url ?? "").toLowerCase().trim()}`;
