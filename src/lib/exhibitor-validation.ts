@@ -38,7 +38,7 @@ const NON_EXHIBITOR_SECTION_RE =
 const EXHIBITOR_SECTION_RE =
   /\b(exhibitors?|exhibit(ing|ors)? (list|hall|directory|companies)|booth|stand no|stand number|floor ?plan|showcase|vendors? (hall|list)|expo hall)\b/i;
 
-const SENTENCE_RE = /[.!?]\s+\S/;
+const SENTENCE_RE = /[.!?]\s+[a-z]/;
 
 function nearestHeadingBefore(markdown: string, index: number): string | null {
   const before = markdown.slice(0, index);
@@ -62,15 +62,23 @@ export function hasCompanyNameStructure(value: string): boolean {
   const name = cleanCompanyName(value);
   if (!isLikelyCompanyName(name)) return false;
   const words = name.split(/\s+/);
-  if (words.length > 8) return false;
-  if (SENTENCE_RE.test(name)) return false;
-  if (/[?!]$/.test(name)) return false;
+  // Long legal/association names are real ("ABIMAQ - The Brazilian Association
+  // of the Machinery & Equipment Industry"), so only very long strings are prose.
+  if (words.length > 16) return false;
+  // Abbreviated company names are full of periods ("C.R. Onsrud Inc.",
+  // "IDEAL-Trade Service, spol. s r.o."), so a period alone is not a sentence —
+  // only flag prose that is both long and sentence-shaped.
+  if (words.length > 8 && SENTENCE_RE.test(name)) return false;
+  if (/\?$/.test(name)) return false;
   if (/^(https?:|www\.)/i.test(name)) return false;
   if (/^\W+$/.test(name)) return false;
-  // Sentence fragments / calls to action.
-  if (/\b(click|please|learn|read|view|see|find out|contact us|visit our)\b/i.test(name)) return false;
+  // Sentence fragments / calls to action (leading words only, so company names
+  // containing "View" or "See" mid-name survive).
+  if (/^(click|please|learn|read|view|see|find out|contact us|visit our)\b/i.test(name)) return false;
+  if (/\b(click here|please contact|learn more|read more|find out more|contact us|visit our)\b/i.test(name)) return false;
   return true;
 }
+
 
 export function validateExhibitorRow(input: {
   companyName: string;
