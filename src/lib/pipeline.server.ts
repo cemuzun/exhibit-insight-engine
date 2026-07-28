@@ -1194,10 +1194,10 @@ ${sourceLinks.slice(0, 80).join("\n")}`,
 
   // Scrape top events for exhibitors
   const maxLeads = input.filters.maxLeadsPerShow ?? 10;
-  const deepDiveCount = Math.max(
-    1,
-    Math.min(25, input.filters.maxDeepDiveShows ?? (eventList.is_directory ? 12 : 1)),
-  );
+  // 0 (or unset via 0) means "deep-dive every show we kept" — no cap.
+  const requestedDeepDive = input.filters.maxDeepDiveShows ?? (eventList.is_directory ? 12 : 1);
+  const deepDiveCount =
+    requestedDeepDive === 0 ? eventsInDb.length : Math.max(1, Math.min(5000, requestedDeepDive));
   const topEvents = eventsInDb.slice(0, eventList.is_directory ? deepDiveCount : 1);
   if (eventsInDb.length > topEvents.length) {
     limitations.push(
