@@ -11,18 +11,9 @@ const here = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(resolve(here, "../package.json"), "utf8"));
 
 // Packages this app needs at runtime beyond framework defaults.
-const REQUIRED = [
-  "ai",
-  "@ai-sdk/openai-compatible",
-  "zod",
-  "@supabase/supabase-js",
-  "lucide-react",
-  "sonner",
-  "recharts",
-  "date-fns",
-  "react-hook-form",
-  "@hookform/resolvers",
-];
+// Shared with scripts/install-required.sh.
+import { REQUIRED } from "./required-packages.mjs";
+
 
 function expectedVersion(name) {
   return pkg.dependencies?.[name] ?? pkg.devDependencies?.[name] ?? null;
@@ -94,9 +85,12 @@ for (const m of missing) {
   console.error(`  ${pad(m.name, nameWidth)}  ${m.expected ?? "(not in package.json — add it)"}`);
 }
 console.error("\nInstall the missing packages with:");
+console.error("  ./scripts/install-required.sh   # installs all required packages, pinned");
+console.error("\nOr run the package-manager command directly:");
 const primary = commands[packageManager];
 const primaryNote = packageManager !== "npm" ? "  # recommended" : "";
 console.error(`  ${primary}${primaryNote}`);
+
 if (packageManager !== "npm") console.error(`  # or: npm install ${installArgs}`);
 process.exit(1);
 
