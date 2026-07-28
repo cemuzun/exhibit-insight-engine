@@ -8,6 +8,9 @@ const CreateInput = z.object({
   targetMarket: z.string().max(200).nullable().optional(),
   minProjectValue: z.number().int().min(0).max(10_000_000).nullable().optional(),
   maxLeadsPerShow: z.number().int().min(1).max(30).default(10),
+  maxEvents: z.number().int().min(1).max(2000).default(500),
+  maxDirectoryPages: z.number().int().min(1).max(50).default(25),
+  maxDeepDiveShows: z.number().int().min(1).max(25).default(4),
   priorityIndustries: z.array(z.string().max(100)).max(20).default([]),
   targetServices: z.array(z.string().max(100)).max(20).default([]),
 });
@@ -26,6 +29,9 @@ export const createResearchRun = createServerFn({ method: "POST" })
         filters: {
           minProjectValue: data.minProjectValue ?? null,
           maxLeadsPerShow: data.maxLeadsPerShow,
+          maxEvents: data.maxEvents,
+          maxDirectoryPages: data.maxDirectoryPages,
+          maxDeepDiveShows: data.maxDeepDiveShows,
           priorityIndustries: data.priorityIndustries,
           targetServices: data.targetServices,
         },
@@ -64,6 +70,9 @@ export const runResearch = createServerFn({ method: "POST" })
           filters: (run.filters ?? {}) as {
             minProjectValue?: number;
             maxLeadsPerShow?: number;
+            maxEvents?: number;
+            maxDirectoryPages?: number;
+            maxDeepDiveShows?: number;
             priorityIndustries?: string[];
             targetServices?: string[];
           },
@@ -126,6 +135,9 @@ export const rerunResearch = createServerFn({ method: "POST" })
           filters: (run.filters ?? {}) as {
             minProjectValue?: number;
             maxLeadsPerShow?: number;
+            maxEvents?: number;
+            maxDirectoryPages?: number;
+            maxDeepDiveShows?: number;
             priorityIndustries?: string[];
             targetServices?: string[];
           },
