@@ -36,7 +36,9 @@ function Dashboard() {
           <p className="mt-1 text-sm text-muted-foreground">Every trade show you've analyzed.</p>
         </div>
         <div className="flex gap-2">
+        <Link to="/digests" className="rounded-md border border-border px-4 py-2 text-sm font-medium">Email digests</Link>
         <Link to="/templates" className="rounded-md border border-border px-4 py-2 text-sm font-medium">Email templates</Link>
+
         <Link to="/runs/new" className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">New research run</Link>
         </div>
       </div>
