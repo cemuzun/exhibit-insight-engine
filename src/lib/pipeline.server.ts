@@ -474,6 +474,9 @@ export async function runPipeline(
   await admin.from("research_runs").update({ status: "scraping" }).eq("id", runId);
   await progress("scrape_source", `Fetching ${input.inputUrl}`);
 
+  const maxEvents = Math.max(1, Math.min(2000, input.filters.maxEvents ?? 500));
+  const maxPages = Math.max(1, Math.min(50, input.filters.maxDirectoryPages ?? 25));
+
   let sourceMarkdown = "";
   let sourceLinks: string[] = [];
   try {
@@ -481,31 +484,58 @@ export async function runPipeline(
       firecrawlScrape(input.inputUrl, { formats: ["markdown", "links"] }),
     );
     sourceMarkdown = scraped.markdown ?? "";
-    sourceLinks = (scraped.links ?? []).slice(0, 200);
+    sourceLinks = (scraped.links ?? []).slice(0, 2000);
   } catch (e) {
     limitations.push(`Could not scrape source URL: ${(e as Error).message}`);
   }
 
-  await progress("extract_events", "Identifying trade shows in the source");
-  const parsedDirectoryEvents = extractEventsFromMarkdownDirectory(sourceMarkdown, input.targetMarket);
+  // Follow pagination so a multi-page directory isn't truncated to page 1.
+  const paginationUrls = findPaginationUrls(input.inputUrl, sourceLinks, maxPages);
+  const extraPages: Array<{ url: string; markdown: string }> = [];
+  if (paginationUrls.length > 0) {
+    await progress(
+      "scrape_source",
+      `Found ${paginationUrls.length} additional directory pages — fetching them`,
+    );
+    const results = await withHeartbeat(
+      "scrape_source",
+      `Fetching ${paginationUrls.length} additional directory pages`,
+      () =>
+        mapPool(paginationUrls, concurrency, async (url) => {
+          try {
+            const page = await firecrawlScrape(url, { formats: ["markdown"] });
+            return { url, markdown: page.markdown ?? "" };
+          } catch {
+            return { url, markdown: "" };
+          }
+        }),
+    );
+    for (const r of results) if (r.markdown) extraPages.push(r);
+    if (extraPages.length < paginationUrls.length) {
+      limitations.push(
+        `${paginationUrls.length - extraPages.length} directory page(s) could not be fetched.`,
+      );
+    }
+  }
 
-  const eventListPrompt = `${CORE_SYSTEM}
+  const allMarkdown = [sourceMarkdown, ...extraPages.map((p) => p.markdown)].join("\n");
+
+  await progress("extract_events", "Identifying trade shows in the source");
+  const parsedDirectoryEvents = dedupeEvents(
+    extractEventsFromMarkdownDirectory(allMarkdown, input.targetMarket),
+  );
+
+  const promptHeader = (chunkNote: string) => `${CORE_SYSTEM}
 
 Source URL: ${input.inputUrl}
 Target market: ${input.targetMarket ?? "unspecified"}
 Priority industries: ${(input.filters.priorityIndustries ?? []).join(", ") || "any"}
 
-TASK: Read the scraped markdown below and identify trade shows / exhibitions. If it is a directory listing many shows, return them all (max 15). If it is a single event page, return that one event.
+TASK: Read the scraped markdown below and identify trade shows / exhibitions. If it is a directory listing many shows, return EVERY show you can see (do not truncate the list). If it is a single event page, return that one event.${chunkNote}
 
 Rank each event by opportunity for a custom-booth / LED / exhibit-services vendor. Use event_opportunity_score 0-100 based on: exhibitor count, industry fit for exhibit spending, average booth size, LED/AV relevance, geographic serviceability, time until event, whether exhibitor data is accessible, and recurring annual opportunity.
 
-recommended_outreach_phase must be one of: EARLY_PLANNING, VENDOR_SELECTION, DESIGN_AND_BUDGET, PRODUCTION_SUPPORT, URGENT_SUPPORT, POST_SHOW_NURTURE.
-
---- SOURCE MARKDOWN ---
-${compactSourceMarkdown(sourceMarkdown)}
-
---- LINKS ON PAGE ---
-${sourceLinks.slice(0, 80).join("\n")}`;
+recommended_outreach_phase must be one of: EARLY_PLANNING, VENDOR_SELECTION, DESIGN_AND_BUDGET, PRODUCTION_SUPPORT, URGENT_SUPPORT, POST_SHOW_NURTURE.`;
 
   let eventList: import("zod").infer<typeof EventListSchema>;
   if (parsedDirectoryEvents.length > 0) {
@@ -513,14 +543,47 @@ ${sourceLinks.slice(0, 80).join("\n")}`;
       source_classification: "markdown_directory_table",
       is_directory: true,
       events: parsedDirectoryEvents,
-      limitations: ["Events were parsed directly from the directory table to avoid model timeouts."],
+      limitations: [
+        `Parsed ${parsedDirectoryEvents.length} shows directly from the directory table across ${extraPages.length + 1} page(s).`,
+      ],
     };
     limitations.push(...(eventList.limitations ?? []));
   } else {
+    // Chunk the markdown instead of truncating, then merge the per-chunk results.
+    const chunks = chunkMarkdown(allMarkdown);
     try {
-      eventList = await withHeartbeat("extract_events", "Identifying trade shows in the source", () =>
-        generateStructured(extractModel, EventListSchema, eventListPrompt),
+      const chunkResults = await withHeartbeat(
+        "extract_events",
+        `Identifying trade shows in the source (${chunks.length} section(s))`,
+        () =>
+          mapPool(chunks.length > 0 ? chunks : [""], Math.min(3, concurrency), (chunk, i) =>
+            generateStructured(
+              extractModel,
+              EventListSchema,
+              `${promptHeader(
+                chunks.length > 1
+                  ? `\n\nThis is section ${i + 1} of ${chunks.length} of a larger page — return only the events visible in this section.`
+                  : "",
+              )}
+
+--- SOURCE MARKDOWN ---
+${chunk}
+
+--- LINKS ON PAGE ---
+${sourceLinks.slice(0, 80).join("\n")}`,
+            ).catch(() => null),
+          ),
       );
+      const merged = dedupeEvents(
+        chunkResults.flatMap((r) => (r ? r.events : [])),
+      );
+      if (merged.length === 0) throw new Error("No events could be extracted from the source page.");
+      eventList = {
+        source_classification: chunkResults.find((r) => r)?.source_classification ?? "web_page",
+        is_directory: merged.length > 1,
+        events: merged,
+        limitations: chunkResults.flatMap((r) => r?.limitations ?? []),
+      };
       limitations.push(...(eventList.limitations ?? []));
     } catch (e) {
       if (NoObjectGeneratedError.isInstance(e)) {
@@ -542,7 +605,12 @@ ${sourceLinks.slice(0, 80).join("\n")}`;
   // Persist events
   const eventRows = eventList.events
     .sort((a, b) => b.event_opportunity_score - a.event_opportunity_score)
-    .slice(0, 15);
+    .slice(0, maxEvents);
+  if (eventList.events.length > eventRows.length) {
+    limitations.push(
+      `Source listed ${eventList.events.length} shows; kept the top ${eventRows.length} by opportunity score.`,
+    );
+  }
   const insertedEvents = await admin
     .from("events")
     .insert(
@@ -571,7 +639,17 @@ ${sourceLinks.slice(0, 80).join("\n")}`;
 
   // Scrape top events for exhibitors
   const maxLeads = input.filters.maxLeadsPerShow ?? 10;
-  const topEvents = eventsInDb.slice(0, eventList.is_directory ? 4 : 1);
+  const deepDiveCount = Math.max(
+    1,
+    Math.min(25, input.filters.maxDeepDiveShows ?? (eventList.is_directory ? 4 : 1)),
+  );
+  const topEvents = eventsInDb.slice(0, eventList.is_directory ? deepDiveCount : 1);
+  if (eventsInDb.length > topEvents.length) {
+    limitations.push(
+      `Exhibitor deep-dive ran on the top ${topEvents.length} of ${eventsInDb.length} shows; the rest are listed without leads.`,
+    );
+  }
+
 
   const allLeads: Array<{ lead: LeadRecord; eventId: string; eventName: string; eventDate: string | null; boothNumber: string | null }> = [];
 
