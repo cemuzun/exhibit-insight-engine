@@ -736,6 +736,51 @@ export async function runPipeline(
     });
   }
 
+  // Circuit breaker visibility: when Firecrawl (or the model gateway) starts
+  // throttling us, every worker parks. Surface that as live progress so the
+  // run reads as "paused, resuming in Ns" instead of looking frozen — and so
+  // the stall watchdog keeps seeing a heartbeat.
+  let breakerTicker: ReturnType<typeof setInterval> | null = null;
+  const stopBreakerTicker = () => {
+    if (breakerTicker) {
+      clearInterval(breakerTicker);
+      breakerTicker = null;
+    }
+  };
+  const currentStage = () => stepLog[stepLog.length - 1]?.key ?? "scrape_source";
+  const watchBreaker = (limiter: typeof firecrawlLimiter, label: string) =>
+    limiter.onBreakerChange((event) => {
+      if (event.state === "open") {
+        const tick = () => {
+          if (limiter.breakerState !== "open") {
+            stopBreakerTicker();
+            return;
+          }
+          const secs = Math.max(0, Math.ceil((limiter.resumeAt - Date.now()) / 1000));
+          void progress(
+            currentStage(),
+            `Paused — ${label} rate limit reached. All workers stopped, resuming in ${secs}s`,
+          ).catch(() => {});
+        };
+        tick();
+        stopBreakerTicker();
+        breakerTicker = setInterval(tick, 5_000);
+      } else {
+        stopBreakerTicker();
+        if (event.state === "closed") {
+          void progress(currentStage(), `${label} rate limit cleared — resuming`).catch(() => {});
+        }
+      }
+    });
+  const unwatchBreakers = [
+    watchBreaker(firecrawlLimiter, "Firecrawl"),
+    watchBreaker(llmLimiter, "Model gateway"),
+  ];
+  const releaseBreakerWatch = () => {
+    stopBreakerTicker();
+    for (const off of unwatchBreakers) off();
+  };
+
   const key = requireLovableKey();
   const gateway = createLovableAiGatewayProvider(key);
   const extractModel = gateway(EXTRACT_MODEL);
@@ -1194,6 +1239,7 @@ Limitations: ${limitations.slice(0, 10).join(" | ")}`;
     // fall back to computed
   }
 
+  releaseBreakerWatch();
   await finishSteps();
   await admin
     .from("research_runs")
