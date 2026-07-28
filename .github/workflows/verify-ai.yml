@@ -1,0 +1,69 @@
+name: Verify AI (PR gate)
+
+# Blocks merges when required dependencies, lockfile pins, environment
+# variables, or the smoke test fail. Mark "verify-ai / Dependencies, env & smoke"
+# as a required status check in the branch protection rules for your default
+# branch so failures actually block the merge button.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [main, master]
+
+concurrency:
+  group: verify-ai-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify-ai:
+    name: Dependencies, env & smoke
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      LOVABLE_API_KEY: ${{ secrets.LOVABLE_API_KEY }}
+      FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}
+      HUBSPOT_API_KEY: ${{ secrets.HUBSPOT_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Cache Bun global store
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-store-${{ hashFiles('bun.lockb', 'bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-store-
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node-modules-${{ hashFiles('bun.lockb', 'bun.lock', 'package.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-modules-
+      - name: Install dependencies (frozen lockfile)
+        run: bun install --frozen-lockfile
+
+      # Packages + lockfile pins + required environment variables.
+      # Missing GitHub secrets make this step fail with the exact variable list.
+      - name: Verify dependencies and environment variables
+        run: npm run verify:ai:deps
+
+      # Type compile + minimal runtime script that exercises the AI packages.
+      - name: Smoke test
+        run: npm run smoke
+
+      - name: Explain failure
+        if: failure()
+        run: |
+          echo "::error title=verify:ai failed::Merging is blocked until this passes."
+          echo "Run 'npm run verify:ai' locally to reproduce."
+          echo "Missing packages: ./scripts/install-required.sh"
+          echo "Missing env vars: add them as repository secrets (Settings → Secrets and variables → Actions)."

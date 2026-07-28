@@ -132,6 +132,19 @@ This repository uses [Renovate](https://docs.renovatebot.com/) to manage depende
 
 > **Note:** The dependency dashboard also lists all other pending updates. Only the AI SDK group is blocked by manual approval; the rest of the dependencies follow the default Renovate schedule.
 
+## CI: blocking merges on failed checks
+
+`.github/workflows/verify-ai.yml` runs on every pull request (and on pushes to `main`/`master`) and executes:
+
+1. `bun install --frozen-lockfile`
+2. `npm run verify:ai:deps` — required packages, lockfile pins **and** required environment variables
+3. `npm run smoke` — type compile plus a minimal runtime script exercising the AI packages
+
+Provide the environment variables as repository secrets under **Settings → Secrets and variables → Actions**: `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `LOVABLE_API_KEY`, `FIRECRAWL_API_KEY` (plus optional `HUBSPOT_API_KEY`). Missing ones make the job fail with the exact variable list.
+
+To actually block merges, add the check as required: **Settings → Branches → Branch protection rules** for your default branch → *Require status checks to pass before merging* → select **`verify-ai / Dependencies, env & smoke`** (and any other CI jobs you want to gate on).
+
+
 ## Built with
 
 - TanStack Start
