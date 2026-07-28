@@ -872,13 +872,21 @@ TASK:
         const output = await withHeartbeat("enrich_leads", `[${ev.event_name}] Scoring ${ex.company_name}`, () =>
           generateStructured(reasonModel, LeadSchema, leadPrompt),
         );
-        allLeads.push({
+        const entry = {
           lead: output,
           eventId: ev.id,
           eventName: ev.event_name,
           eventDate: ev.start_date ?? null,
           boothNumber: ex.booth_number ?? null,
-        });
+        };
+        allLeads.push(entry);
+        // Stream the lead into the database immediately so the UI can show it live.
+        try {
+          await admin.from("leads").insert(buildLeadRow(runId, input.inputUrl, entry));
+        } catch {
+          // non-fatal; the row is still counted in the summary
+        }
+
       } catch (e) {
         limitations.push(`Could not analyze ${ex.company_name}: ${(e as Error).message}`);
       }
