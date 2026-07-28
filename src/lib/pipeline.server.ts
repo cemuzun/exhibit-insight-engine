@@ -1386,6 +1386,23 @@ ${sourceLinks.slice(0, 80).join("\n")}`,
     }
   }
 
+  // USA-only: drop any show whose location is outside the United States (or unprovable).
+  {
+    const beforeGeo = eventList.events.length;
+    const usEvents = eventList.events.filter(isUsEvent);
+    if (usEvents.length > 0 && usEvents.length < beforeGeo) {
+      limitations.push(
+        `Filtered out ${beforeGeo - usEvents.length} non-USA show(s); ${usEvents.length} US show(s) kept.`,
+      );
+      eventList = { ...eventList, events: usEvents };
+    } else if (usEvents.length > 0) {
+      eventList = { ...eventList, events: usEvents };
+    } else {
+      limitations.push("No US-based shows found in the source; keeping all shows so the run can continue.");
+    }
+  }
+
+
   // Drop shows that are already over or too close to sell into (booth design,
   // fabrication and shipping need lead time).
   // An explicit "from" date is a direct answer to "is this too soon?", so when the
