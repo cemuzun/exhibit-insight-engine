@@ -3,6 +3,13 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { createLovableAiGatewayProvider, requireLovableKey } from "./ai-gateway.server";
 import { firecrawlScrape, firecrawlSearch } from "./firecrawl.server";
 import {
+  guarded,
+  llmLimiter,
+  firecrawlLimiter,
+  enrichConcurrency,
+  mapPool,
+} from "./rate-limit.server";
+import {
   EventListSchema,
   ExhibitorListSchema,
   LeadSchema,
