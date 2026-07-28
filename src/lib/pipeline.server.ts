@@ -3,6 +3,13 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { createLovableAiGatewayProvider, requireLovableKey } from "./ai-gateway.server";
 import { firecrawlScrape, firecrawlSearch } from "./firecrawl.server";
 import {
+  guarded,
+  llmLimiter,
+  firecrawlLimiter,
+  enrichConcurrency,
+  mapPool,
+} from "./rate-limit.server";
+import {
   EventListSchema,
   ExhibitorListSchema,
   LeadSchema,
@@ -62,8 +69,13 @@ async function generateStructured<T>(
 ): Promise<T> {
   let lastText = "";
 
+  // Every model call goes through the shared LLM limiter (concurrency cap +
+  // per-minute throttle) and is retried with exponential backoff on 429/5xx.
+  const call = (args: Parameters<typeof generateText>[0]) =>
+    guarded(llmLimiter, () => generateText(args), { label: "llm generate" });
+
   try {
-    const { output } = await generateText({
+    const { output } = await call({
       model,
       output: Output.object({ schema: schema as never }),
       prompt,
@@ -82,7 +94,7 @@ async function generateStructured<T>(
 OUTPUT FORMAT: Reply with a single valid JSON object only. No markdown fences, no commentary, no trailing text. Use null for unknown values and never omit required keys.`;
 
   try {
-    const { text } = await generateText({ model, prompt: jsonOnly });
+    const { text } = await call({ model, prompt: jsonOnly });
     lastText = text || lastText;
     const parsed = schema.safeParse(extractJson(text));
     if (parsed.success && parsed.data !== undefined) return parsed.data;
@@ -90,7 +102,7 @@ OUTPUT FORMAT: Reply with a single valid JSON object only. No markdown fences, n
     // fall through to repair
   }
 
-  const { text: repaired } = await generateText({
+  const { text: repaired } = await call({
     model,
     prompt: `The following text was supposed to be a single valid JSON object but could not be parsed or validated. Return ONLY the corrected JSON object, preserving all usable data and using null for unknown values.
 
@@ -105,6 +117,7 @@ ${lastText.slice(0, 20000)}`,
 }
 
 
+
 type ProgressFn = (stage: string, message: string) => Promise<void>;
 
 export async function runPipeline(
@@ -117,6 +130,12 @@ export async function runPipeline(
       maxLeadsPerShow?: number;
       priorityIndustries?: string[];
       targetServices?: string[];
+      /** Optional per-run tuning of parallelism / request rates. */
+      concurrency?: number;
+      firecrawlConcurrency?: number;
+      firecrawlRpm?: number;
+      llmConcurrency?: number;
+      llmRpm?: number;
     };
   },
   admin: SupabaseClient,
@@ -172,6 +191,22 @@ export async function runPipeline(
 
 
   const limitations: string[] = [];
+
+  // Per-run overrides on top of the env-var defaults (concurrency + rate caps).
+  const concurrency = enrichConcurrency(input.filters.concurrency);
+  if (input.filters.firecrawlConcurrency || input.filters.firecrawlRpm) {
+    firecrawlLimiter.configure({
+      ...(input.filters.firecrawlConcurrency ? { concurrency: input.filters.firecrawlConcurrency } : {}),
+      ...(input.filters.firecrawlRpm ? { requestsPerMinute: input.filters.firecrawlRpm } : {}),
+    });
+  }
+  if (input.filters.llmConcurrency || input.filters.llmRpm) {
+    llmLimiter.configure({
+      ...(input.filters.llmConcurrency ? { concurrency: input.filters.llmConcurrency } : {}),
+      ...(input.filters.llmRpm ? { requestsPerMinute: input.filters.llmRpm } : {}),
+    });
+  }
+
   const key = requireLovableKey();
   const gateway = createLovableAiGatewayProvider(key);
   const extractModel = gateway(EXTRACT_MODEL);
@@ -305,31 +340,24 @@ ${exhibitorSource.slice(0, 30000)}`;
 
     const exhibitors = exhibitorList.exhibitors.slice(0, maxLeads);
 
-    const CONCURRENCY = 5;
     let completed = 0;
-    let cursor = 0;
 
-    const worker = async () => {
-      while (true) {
-        const i = cursor++;
-        if (i >= exhibitors.length) return;
-        const ex = exhibitors[i];
+    await mapPool(exhibitors, concurrency, async (ex) => {
+      // Firecrawl search for enrichment context
+      let enrichmentContext = "";
+      try {
+        const results = await firecrawlSearch(
+          `${ex.company_name} trade show exhibit booth ${ev.event_name}`,
+          { limit: 3 },
+        );
+        enrichmentContext = results
+          .map((r) => `[${r.url}] ${r.title ?? ""} — ${r.description ?? ""}`)
+          .join("\n");
+      } catch {
+        // Non-fatal
+      }
 
-        // Firecrawl search for enrichment context
-        let enrichmentContext = "";
-        try {
-          const results = await firecrawlSearch(
-            `${ex.company_name} trade show exhibit booth ${ev.event_name}`,
-            { limit: 3 },
-          );
-          enrichmentContext = results
-            .map((r) => `[${r.url}] ${r.title ?? ""} — ${r.description ?? ""}`)
-            .join("\n");
-        } catch {
-          // Non-fatal
-        }
-
-        const leadPrompt = `${CORE_SYSTEM}
+      const leadPrompt = `${CORE_SYSTEM}
 
 You are analyzing ONE exhibitor and producing a complete lead record.
 
@@ -356,30 +384,27 @@ TASK:
 5. List buying_triggers, risks_and_uncertainties, unknown_fields, and a plain-language rationale.
 6. Set confidence_level based on how well-supported the record is.`;
 
-        try {
-          const output = await generateStructured(reasonModel, LeadSchema, leadPrompt);
-          allLeads.push({
-            lead: output,
-            eventId: ev.id,
-            eventName: ev.event_name,
-            eventDate: ev.start_date ?? null,
-            boothNumber: ex.booth_number ?? null,
-          });
-        } catch (e) {
-          limitations.push(`Could not analyze ${ex.company_name}: ${(e as Error).message}`);
-        }
-
-        completed++;
-        await progress(
-          "enrich_leads",
-          `[${ev.event_name}] Analyzed ${completed}/${exhibitors.length} (${ex.company_name})`,
-        );
+      try {
+        const output = await generateStructured(reasonModel, LeadSchema, leadPrompt);
+        allLeads.push({
+          lead: output,
+          eventId: ev.id,
+          eventName: ev.event_name,
+          eventDate: ev.start_date ?? null,
+          boothNumber: ex.booth_number ?? null,
+        });
+      } catch (e) {
+        limitations.push(`Could not analyze ${ex.company_name}: ${(e as Error).message}`);
       }
-    };
 
-    await Promise.all(
-      Array.from({ length: Math.min(CONCURRENCY, exhibitors.length) }, () => worker()),
-    );
+      completed++;
+      await progress(
+        "enrich_leads",
+        `[${ev.event_name}] Analyzed ${completed}/${exhibitors.length} (${ex.company_name}) · ${concurrency} at a time`,
+      );
+    });
+
+
 
   }
 
