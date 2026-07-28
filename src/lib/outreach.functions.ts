@@ -66,7 +66,22 @@ export const buildOutreachQueue = createServerFn({ method: "POST" })
       (existing ?? []).map((r) => `${r.lead_id}::${(r.recipient_email ?? "").toLowerCase()}`),
     );
 
-    const rows: Array<Record<string, unknown>> = [];
+    type InsertRow = {
+      user_id: string;
+      run_id: string;
+      lead_id: string;
+      company_name: string;
+      recipient_name: string | null;
+      recipient_title: string | null;
+      recipient_email: string;
+      subject: string;
+      body: string;
+      template_name: string | null;
+      lead_score: number;
+      priority_tier: string | null;
+      status: string;
+    };
+    const rows: InsertRow[] = [];
     let noContact = 0;
 
     for (const lead of leads ?? []) {
@@ -144,7 +159,12 @@ export const updateOutreachDraft = createServerFn({ method: "POST" })
       .parse(input),
   )
   .handler(async ({ data, context }) => {
-    const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    const patch: {
+      updated_at: string;
+      subject?: string;
+      body?: string;
+      status?: string;
+    } = { updated_at: new Date().toISOString() };
     if (data.subject !== undefined) patch.subject = data.subject;
     if (data.body !== undefined) patch.body = data.body;
     if (data.status !== undefined) patch.status = data.status;
