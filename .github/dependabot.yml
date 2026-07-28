@@ -1,0 +1,13 @@
+version: 2
+updates:
+  # Disable automatic version-update PRs for npm/bun so they do not conflict with
+  # Renovate's approval workflow for pinned AI SDK packages. Security alerts still
+  # work through GitHub's Dependabot security updates setting.
+  - package-ecosystem: "bun"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 0
+    ignore:
+      - dependency-name: "ai"
+      - dependency-name: "@ai-sdk/openai-compatible"
