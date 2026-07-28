@@ -193,6 +193,8 @@ function RunDetail() {
   } | null;
 
   const inProgress = run.status !== "complete" && run.status !== "failed";
+  const scoringEntries = (((run as { counters?: { scoring_feed?: unknown } }).counters
+    ?.scoring_feed ?? []) as ScoringFeedEntry[]);
 
   return (
     <main className="mx-auto max-w-7xl px-6 py-8">
@@ -220,11 +222,22 @@ function RunDetail() {
               <CrmSyncButton runId={runId} disabled={typedLeads.length === 0} />
             </>
           )}
+          {scoringEntries.length > 0 && (
+            <Link
+              to="/runs/$runId/activity"
+              params={{ runId }}
+              className="rounded-md border border-border bg-card px-3 py-2 text-xs text-muted-foreground hover:text-foreground"
+            >
+              Live scoring decisions
+              <span className="ml-1.5 font-mono">{scoringEntries.length}</span>
+            </Link>
+          )}
           <div className="flex rounded-md border border-border bg-card p-1 text-xs">
             <button onClick={() => setMode("dashboard")} className={`rounded px-3 py-1.5 ${mode === "dashboard" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}>Dashboard</button>
             <button onClick={() => setMode("exhibitors")} className={`rounded px-3 py-1.5 ${mode === "exhibitors" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}>Exhibitors</button>
             <button onClick={() => setMode("report")} className={`rounded px-3 py-1.5 ${mode === "report" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}>Report</button>
           </div>
+
         </div>
       </div>
 
@@ -241,13 +254,8 @@ function RunDetail() {
         />
       )}
 
-      {inProgress && (
-        <ScoringFeed
-          entries={
-            (((run as { counters?: { scoring_feed?: unknown } }).counters?.scoring_feed ?? []) as ScoringFeedEntry[])
-          }
-        />
-      )}
+
+
 
       <div className="mb-6">
         <DebugPanel
