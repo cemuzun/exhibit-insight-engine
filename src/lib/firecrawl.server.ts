@@ -73,13 +73,21 @@ type ScrapeResult = {
 
 export async function firecrawlScrape(
   url: string,
-  opts?: { formats?: string[]; onlyMainContent?: boolean; waitFor?: number; cache?: CacheOptions },
+  opts?: {
+    formats?: string[];
+    onlyMainContent?: boolean;
+    waitFor?: number;
+    /** e.g. ["pdf"] so Firecrawl converts a linked PDF into markdown. */
+    parsers?: string[];
+    cache?: CacheOptions;
+  },
 ): Promise<ScrapeResult> {
   const payload = {
     url,
     formats: opts?.formats ?? ["markdown", "links"],
     onlyMainContent: opts?.onlyMainContent ?? true,
     waitFor: opts?.waitFor,
+    parsers: opts?.parsers,
   };
   const { value: body, cached } = await withCache<({ data?: ScrapeResult } & ScrapeResult) | null>(
     "scrape",
