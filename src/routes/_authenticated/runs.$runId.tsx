@@ -258,12 +258,15 @@ function RunDetail() {
         />
       )}
 
-
-
-
-
-
-
+      {(() => {
+        const c = ((run as { counters?: unknown }).counters ?? {}) as {
+          exhibitor_samples?: ExhibitorSample[];
+          exhibitors_found?: number;
+        };
+        const samples = c.exhibitor_samples ?? [];
+        if (typedLeads.length > 0 || samples.length === 0) return null;
+        return <LiveExhibitors samples={samples} total={c.exhibitors_found ?? samples.length} />;
+      })()}
 
 
       {run.status === "failed" && (
