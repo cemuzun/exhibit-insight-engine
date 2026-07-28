@@ -5,6 +5,8 @@ import { useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { getRun } from "@/lib/research.functions";
 import { ScoringFeed, type ScoringFeedEntry } from "@/components/ScoringFeed";
+import { RunTimings, type StepEntry } from "@/components/RunProgress";
+import { DebugPanel, type ShowDebugEntry } from "@/components/DebugPanel";
 
 export const Route = createFileRoute("/_authenticated/runs/$runId/activity")({
   head: () => ({
@@ -80,6 +82,9 @@ function RunActivity() {
   const entries = (((run as { counters?: { scoring_feed?: unknown } }).counters?.scoring_feed ??
     []) as ScoringFeedEntry[]);
   const inProgress = run.status !== "complete" && run.status !== "failed";
+  const stepLog = (((run as { step_log?: unknown }).step_log ?? []) as StepEntry[]);
+  const showDebug = (((run as { counters?: { show_debug?: unknown } }).counters?.show_debug ??
+    []) as ShowDebugEntry[]);
 
   return (
     <main className="mx-auto max-w-5xl px-6 py-8">
@@ -90,13 +95,29 @@ function RunActivity() {
       >
         ← Back to run
       </Link>
-      <h1 className="mt-2 text-2xl font-semibold tracking-tight">Live scoring decisions</h1>
+      <h1 className="mt-2 text-2xl font-semibold tracking-tight">Activity &amp; diagnostics</h1>
       <div className="mt-1 flex items-center gap-3 text-xs text-muted-foreground">
         <span className="font-mono uppercase">{run.status}</span>
         <span className="break-all">{run.input_url}</span>
       </div>
 
+      {stepLog.length > 0 && (
+        <div className="mt-6">
+          <RunTimings stepLog={stepLog} />
+        </div>
+      )}
+
       <div className="mt-6">
+        <DebugPanel
+          shows={showDebug}
+          skipReasons={entries
+            .filter((e) => e.status === "skipped")
+            .map((e) => ({ at: e.at, show: e.show, reason: e.reason }))}
+        />
+      </div>
+
+      <h2 className="mt-8 text-sm font-medium">Live scoring decisions</h2>
+      <div className="mt-3">
         {entries.length === 0 ? (
           <p className="rounded-lg border border-border bg-card p-6 text-sm text-muted-foreground">
             {inProgress
