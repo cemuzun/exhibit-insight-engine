@@ -174,8 +174,11 @@ export const buildOutreachQueue = createServerFn({ method: "POST" })
 
       for (const dm of contacts) {
         const email = (dm.public_business_email ?? "").trim().toLowerCase();
+        if (!isDeliverableAddress(email)) continue;
+        if (suppressedEmails.has(email)) continue;
         if (seen.has(`${lead.id}::${email}`)) continue;
         seen.add(`${lead.id}::${email}`);
+
 
         const templateLead: TemplateLead = { ...(lead as unknown as TemplateLead), decision_makers: [dm] };
         const rendered = renderForLead((templates ?? []) as EmailTemplate[], templateLead);
