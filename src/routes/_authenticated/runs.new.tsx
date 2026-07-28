@@ -24,6 +24,9 @@ function NewRun() {
     minProjectValue: 25000,
     maxLeadsPerShow: 10,
     minLeadTimeDays: 45,
+    maxEvents: 500,
+    maxDirectoryPages: 25,
+    maxDeepDiveShows: 4,
     priorityIndustries: "technology, manufacturing, medical, automotive",
     targetServices: DEFAULT_SERVICES.join(", "),
   });
@@ -40,6 +43,9 @@ function NewRun() {
           minProjectValue: form.minProjectValue,
           maxLeadsPerShow: form.maxLeadsPerShow,
           minLeadTimeDays: form.minLeadTimeDays,
+          maxEvents: form.maxEvents,
+          maxDirectoryPages: form.maxDirectoryPages,
+          maxDeepDiveShows: form.maxDeepDiveShows,
           priorityIndustries: form.priorityIndustries.split(",").map((s) => s.trim()).filter(Boolean),
           targetServices: form.targetServices.split(",").map((s) => s.trim()).filter(Boolean),
         },
@@ -120,6 +126,36 @@ function NewRun() {
               max={365}
               value={form.minLeadTimeDays}
               onChange={(e) => setForm({ ...form, minLeadTimeDays: parseInt(e.target.value || "0") })}
+              className="w-full rounded-md border border-border bg-input px-3 py-2 text-sm font-mono"
+            />
+          </Field>
+          <Field label="Max shows reviewed" hint="Cap on shows kept from a directory (up to 2000).">
+            <input
+              type="number"
+              min={1}
+              max={2000}
+              value={form.maxEvents}
+              onChange={(e) => setForm({ ...form, maxEvents: parseInt(e.target.value || "500") })}
+              className="w-full rounded-md border border-border bg-input px-3 py-2 text-sm font-mono"
+            />
+          </Field>
+          <Field label="Max directory pages" hint="How deep to paginate the source (up to 50)." >
+            <input
+              type="number"
+              min={1}
+              max={50}
+              value={form.maxDirectoryPages}
+              onChange={(e) => setForm({ ...form, maxDirectoryPages: parseInt(e.target.value || "25") })}
+              className="w-full rounded-md border border-border bg-input px-3 py-2 text-sm font-mono"
+            />
+          </Field>
+          <Field label="Shows deep-dived" hint="Shows we chase exhibitors + leads for (up to 25). Each adds minutes.">
+            <input
+              type="number"
+              min={1}
+              max={25}
+              value={form.maxDeepDiveShows}
+              onChange={(e) => setForm({ ...form, maxDeepDiveShows: parseInt(e.target.value || "4") })}
               className="w-full rounded-md border border-border bg-input px-3 py-2 text-sm font-mono"
             />
           </Field>
