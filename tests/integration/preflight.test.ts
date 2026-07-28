@@ -6,6 +6,13 @@ import { join } from "node:path";
 
 const SCRIPT_SRC = join(process.cwd(), "scripts", "preflight.mjs");
 const LIST_SRC = join(process.cwd(), "scripts", "required-packages.mjs");
+const ENV_LIST_SRC = join(process.cwd(), "scripts", "required-env.mjs");
+
+const { REQUIRED_ENV } = await import("../../scripts/required-env.mjs");
+
+const envWithAll = Object.fromEntries(
+  REQUIRED_ENV.filter((e) => e.required).map((e) => [e.name, `mock-${e.name.toLowerCase()}`]),
+);
 
 function scaffold(pkgs: string[]) {
   const dir = mkdtempSync(join(tmpdir(), "preflight-"));
@@ -13,6 +20,7 @@ function scaffold(pkgs: string[]) {
   mkdirSync(join(dir, "scripts"), { recursive: true });
   cpSync(SCRIPT_SRC, join(dir, "scripts", "preflight.mjs"));
   cpSync(LIST_SRC, join(dir, "scripts", "required-packages.mjs"));
+  cpSync(ENV_LIST_SRC, join(dir, "scripts", "required-env.mjs"));
 
   const nm = join(dir, "node_modules");
   for (const p of pkgs) {
@@ -27,12 +35,14 @@ function scaffold(pkgs: string[]) {
   return dir;
 }
 
-function runIn(dir: string) {
+function runIn(dir: string, env: Record<string, string> = {}) {
   return spawnSync("node", [join(dir, "scripts", "preflight.mjs")], {
     cwd: dir,
     encoding: "utf8",
+    env: { ...process.env, ...env },
   });
 }
+
 
 describe("preflight script (integration)", () => {
   it("exits 0 when all required packages are resolvable", () => {
