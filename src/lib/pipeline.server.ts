@@ -986,6 +986,7 @@ TASK:
         } catch {
           // non-fatal; the row is still counted in the summary
         }
+        await bumpCounters({ leads_scored: counters.leads_scored + 1 });
 
       } catch (e) {
         limitations.push(`Could not analyze ${ex.company_name}: ${(e as Error).message}`);
@@ -998,9 +999,9 @@ TASK:
       );
     });
 
-
-
+    await bumpCounters({ deep_dive_done: counters.deep_dive_done + 1 });
   }
+
 
   // Deterministic scoring + tiering (rows were already streamed in as they were produced)
   const leadRows = allLeads.map(({ lead, eventId, eventName, eventDate, boothNumber }) =>
