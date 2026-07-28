@@ -530,20 +530,42 @@ type ProgressFn = (stage: string, message: string) => Promise<void>;
 const EXHIBITOR_LINK_RE =
   /(exhibitor|exhibit)[-_/]?(list|directory|search|hall|floor ?plan|showcase)|\/exhibitors?\b|who-?s-?exhibiting/i;
 
+/** Pages that mention exhibitors but never list companies. */
+const EXHIBITOR_NEGATIVE_RE =
+  /prospectus|sponsor|become[-_/]?an?[-_/]?exhibitor|why[-_/]?exhibit|faq|service[-_/]?manual|resources?|contact|pricing|rates|\.pdf($|\?)/i;
+
+/** Directory platforms that reliably host real exhibitor lists. */
+const EXHIBITOR_PLATFORM_RE = /mapyourshow|a2zinc|expocad|swapcard|eventscribe|10times\.com\/.+\/exhibitors/i;
+
+function scoreCandidate(url: string): number {
+  let score = 0;
+  if (EXHIBITOR_PLATFORM_RE.test(url)) score += 6;
+  if (/exhibitor[-_/]?(list|directory|search)|exhibitor-?directory|who-?s-?exhibiting/i.test(url)) score += 4;
+  if (/\/exhibitors?\/?($|\?)/i.test(url)) score += 2;
+  if (EXHIBITOR_NEGATIVE_RE.test(url)) score -= 5;
+  return score;
+}
+
+/**
+ * A real exhibitor list has many company entries, not just the word
+ * "exhibitor" sprinkled across a resources page.
+ */
 function looksLikeExhibitorContent(markdown: string): boolean {
-  if (markdown.length < 400) return false;
-  const hits = (markdown.match(/booth|stand\s?#|exhibitor/gi) ?? []).length;
-  return hits >= 3;
+  if (markdown.length < 600) return false;
+  const lines = markdown.split("\n").map((l) => l.trim()).filter(Boolean);
+  const linkLines = lines.filter((l) => /^[-*|\s]*\[?[A-Z0-9][^\n]{2,60}\]?/.test(l)).length;
+  const companyish = (markdown.match(/\b(inc\.?|llc|ltd\.?|corp\.?|co\.|gmbh|group|systems|technologies|industries|equipment|solutions)\b/gi) ?? []).length;
+  const boothHits = (markdown.match(/booth\s*#?\s*\w+|stand\s?#/gi) ?? []).length;
+  return boothHits >= 3 || companyish >= 8 || (companyish >= 4 && linkLines >= 20);
 }
 
 /** Common exhibitor-directory paths to try when a site exposes no obvious link. */
 const EXHIBITOR_PATH_GUESSES = [
-  "/exhibitors",
   "/exhibitor-list",
-  "/exhibitor-directory",
   "/exhibitors/exhibitor-list",
+  "/exhibitor-directory",
   "/attend/exhibitor-list",
-  "/show/exhibitor-list",
+  "/exhibitors",
 ];
 
 function guessExhibitorUrls(officialUrl: string): string[] {
@@ -556,9 +578,10 @@ function guessExhibitorUrls(officialUrl: string): string[] {
 }
 
 /**
- * Event homepages almost never list exhibitors. Collect several plausible
- * exhibitor-directory sources (links, guessed paths, web search) so the caller
- * can try the next one when extraction yields nothing.
+ * Event homepages almost never list exhibitors, and "exhibitor resources"
+ * pages list none either. Collect ranked candidates from the site itself,
+ * common paths, known directory platforms, and aggregator sites (10times),
+ * so the caller can try the next one when extraction yields nothing.
  */
 async function findExhibitorSources(
   officialUrl: string,
@@ -571,25 +594,38 @@ async function findExhibitorSources(
   const deadline = Date.now() + budgetMs;
   const outOfTime = () => Date.now() >= deadline;
 
-  const home = await firecrawlScrape(officialUrl, { formats: ["markdown", "links"] }).catch(() => null);
-
   const candidates: string[] = [];
   const push = (u?: string | null) => {
-    if (u && !candidates.includes(u)) candidates.push(u);
+    if (u && /^https?:\/\//i.test(u) && !candidates.includes(u)) candidates.push(u);
   };
+
+  const home = officialUrl
+    ? await firecrawlScrape(officialUrl, { formats: ["markdown", "links"] }).catch(() => null)
+    : null;
 
   for (const link of home?.links ?? []) if (EXHIBITOR_LINK_RE.test(link)) push(link);
   for (const g of guessExhibitorUrls(officialUrl)) push(g);
 
+  // Aggregators + platform-hosted directories via web search.
   if (!outOfTime()) {
-    const results = await firecrawlSearch(`${eventName} exhibitor list directory`, { limit: 3 }).catch(
-      () => [] as Array<{ url: string }>,
-    );
-    for (const r of results) push(r.url);
+    const queries = [
+      `${eventName} exhibitor list directory`,
+      `10times ${eventName} exhibitors`,
+    ];
+    for (const q of queries) {
+      const results = await firecrawlSearch(q, { limit: 5 }).catch(() => [] as Array<{ url: string }>);
+      for (const r of results) push(r.url);
+    }
   }
 
+  const ranked = candidates
+    .map((url) => ({ url, score: scoreCandidate(url) }))
+    .filter((c) => c.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .map((c) => c.url);
+
   const found: Array<{ url: string; markdown: string }> = [];
-  for (const url of candidates.slice(0, 8)) {
+  for (const url of ranked.slice(0, 6)) {
     if (outOfTime() || found.length >= max) break;
     const page = await firecrawlScrape(url, { formats: ["markdown"] }).catch(() => null);
     const md = page?.markdown ?? "";
@@ -600,6 +636,7 @@ async function findExhibitorSources(
   if (found.length === 0 && looksLikeExhibitorContent(homeMd)) found.push({ url: officialUrl, markdown: homeMd });
   return found;
 }
+
 
 
 export async function runPipeline(
