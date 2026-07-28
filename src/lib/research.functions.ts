@@ -48,7 +48,7 @@ export const runResearch = createServerFn({ method: "POST" })
       .from("research_runs")
       .select("*")
       .eq("id", data.runId)
-      .single();
+      .maybeSingle();
     if (error || !run) throw new Error("Run not found");
     if (run.status === "complete") return { ok: true, alreadyComplete: true };
 
