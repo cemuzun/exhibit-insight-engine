@@ -4,6 +4,8 @@ import { createLovableAiGatewayProvider, requireLovableKey } from "./ai-gateway.
 import { firecrawlMap, firecrawlScrape, firecrawlSearch } from "./firecrawl.server";
 import { recentCachedScrapesForHost } from "./firecrawl-cache.server";
 import { isLikelyCompanyName, normalizedCompanyKey, parseExhibitorsFromMarkdown } from "./exhibitor-parser";
+import { validateExhibitorRow } from "./exhibitor-validation";
+
 import {
   guarded,
   llmLimiter,
