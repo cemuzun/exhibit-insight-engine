@@ -7,6 +7,7 @@ import { getRun, rerunResearch } from "@/lib/research.functions";
 import { syncRunToCrm } from "@/lib/crm.functions";
 import { CrmSyncPreview } from "@/components/CrmSyncPreview";
 import { RunProgress, RunTimings, type StepEntry, type RunCounters } from "@/components/RunProgress";
+import { ScoringFeed, type ScoringFeedEntry } from "@/components/ScoringFeed";
 
 import { listEmailTemplates } from "@/lib/templates.functions";
 import { renderForLead, type EmailTemplate } from "@/lib/email-template-engine";
@@ -177,6 +178,14 @@ function RunDetail() {
           counters={((run as { counters?: unknown }).counters ?? {}) as RunCounters}
           liveEvents={events.length}
           liveLeads={typedLeads.length}
+        />
+      )}
+
+      {inProgress && (
+        <ScoringFeed
+          entries={
+            (((run as { counters?: { scoring_feed?: unknown } }).counters?.scoring_feed ?? []) as ScoringFeedEntry[])
+          }
         />
       )}
 

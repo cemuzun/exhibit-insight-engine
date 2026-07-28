@@ -172,6 +172,65 @@ type LeadEntry = {
   boothNumber: string | null;
 };
 
+/** One live scoring decision streamed to the run UI as it happens. */
+export type ScoringFeedEntry = {
+  at: string;
+  company: string;
+  show: string;
+  status: "scored" | "skipped";
+  score?: number;
+  tier?: string;
+  confidence?: string;
+  booth_confidence?: number;
+  top_drivers?: { key: string; points: number; max: number }[];
+  weak_spots?: { key: string; points: number; max: number }[];
+  reason: string;
+};
+
+const SCORE_MAX: Record<string, number> = {
+  trade_show_activity: 15,
+  booth_scale_complexity: 15,
+  led_digital_fit: 15,
+  buying_capacity: 10,
+  timing: 10,
+  decision_maker_availability: 10,
+  growth_trigger_signals: 10,
+  service_fit: 10,
+  vendor_opportunity: 5,
+};
+
+const TIER_REASON: Record<string, string> = {
+  TIER_1_IMMEDIATE: "Top score with a confirmed decision-maker path — prioritized for immediate outreach.",
+  TIER_2_HIGH_PRIORITY: "Strong fit but no confirmed contact yet — high-priority outreach.",
+  TIER_3_NURTURE: "Moderate fit — worth nurturing ahead of the show.",
+  TIER_4_LOW_PRIORITY: "Low fit signals — deprioritized, kept for reference only.",
+};
+
+/** Explain a scored lead: strongest and weakest scoring components. */
+export function explainLeadScore(row: ReturnType<typeof buildLeadRow>): ScoringFeedEntry {
+  const b = (row.score_breakdown ?? {}) as Record<string, number>;
+  const parts = Object.keys(SCORE_MAX).map((key) => ({
+    key,
+    points: Number(b[key] ?? 0),
+    max: SCORE_MAX[key],
+  }));
+  const byRatio = [...parts].sort((a, b2) => b2.points / b2.max - a.points / a.max);
+  return {
+    at: new Date().toISOString(),
+    company: row.company_name,
+    show: row.trade_show ?? "",
+    status: "scored",
+    score: row.lead_score,
+    tier: row.priority_tier,
+    confidence: row.confidence_level ?? "LOW",
+    booth_confidence: row.booth_analysis_confidence,
+    top_drivers: byRatio.slice(0, 3),
+    weak_spots: byRatio.slice(-2).reverse(),
+    reason: TIER_REASON[row.priority_tier] ?? "Scored.",
+  };
+}
+
+
 /** Deterministic scoring + tiering for one enriched exhibitor. */
 function buildLeadRow(runId: string, inputUrl: string, entry: LeadEntry) {
   const { lead, eventId, eventName, eventDate, boothNumber } = entry;
@@ -589,11 +648,19 @@ export async function runPipeline(
     deep_dive_done: 0,
     exhibitors_found: 0,
     leads_scored: 0,
+    scoring_feed: [] as ScoringFeedEntry[],
   };
   const bumpCounters = async (patch: Partial<typeof counters>) => {
     Object.assign(counters, patch);
     await admin.from("research_runs").update({ counters }).eq("id", runId);
   };
+
+  /** Push a live scoring decision (kept or skipped) onto the run feed. */
+  const pushScoringEntry = async (entry: ScoringFeedEntry) => {
+    counters.scoring_feed = [entry, ...counters.scoring_feed].slice(0, 40);
+    await admin.from("research_runs").update({ counters }).eq("id", runId);
+  };
+
 
 
   const finishSteps = async () => {
@@ -980,17 +1047,27 @@ TASK:
           boothNumber: ex.booth_number ?? null,
         };
         allLeads.push(entry);
+        const row = buildLeadRow(runId, input.inputUrl, entry);
         // Stream the lead into the database immediately so the UI can show it live.
         try {
-          await admin.from("leads").insert(buildLeadRow(runId, input.inputUrl, entry));
+          await admin.from("leads").insert(row);
         } catch {
           // non-fatal; the row is still counted in the summary
         }
         await bumpCounters({ leads_scored: counters.leads_scored + 1 });
+        await pushScoringEntry(explainLeadScore(row));
 
       } catch (e) {
         limitations.push(`Could not analyze ${ex.company_name}: ${(e as Error).message}`);
+        await pushScoringEntry({
+          at: new Date().toISOString(),
+          company: ex.company_name,
+          show: ev.event_name,
+          status: "skipped",
+          reason: `Skipped — analysis failed: ${(e as Error).message}`,
+        });
       }
+
 
       completed++;
       await progress(
