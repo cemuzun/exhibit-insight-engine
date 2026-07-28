@@ -1565,6 +1565,15 @@ ${sourceLinks.slice(0, 80).join("\n")}`,
         : `${verification.verified_status} · event score ${breakdown.total} · ${recommendedAction(breakdown.total, verification.verified_status)}`,
     });
 
+    verifyDone += 1;
+    if (verifyDone % 5 === 0 || verifyDone === verifyPool.length) {
+      await progress(
+        "verify_events",
+        `Verified ${verifyDone}/${verifyPool.length} show(s) · ${verifiedCount} confirmed, ${excludedCount} excluded`,
+      );
+      await bumpCounters({ events_verified: verifiedCount, events_excluded: excludedCount });
+    }
+
     return {
       ...ev,
       start_date: verification.start_date ?? ev.start_date,
@@ -1582,22 +1591,43 @@ ${sourceLinks.slice(0, 80).join("\n")}`,
     events_excluded: excludedCount,
   });
 
-  const eligibleEvents = verified
+  let eligibleEvents = verified
     .filter((e) => !e.exclusion_reason)
     .sort((a, b) => compareForProcessing(a, b));
 
+  // Verification is best-effort: a blocked official site or a failed model call
+  // must not wipe out the whole run. Fall back to directory-only shows that are
+  // otherwise usable (not canceled, not past) instead of failing.
   if (eligibleEvents.length === 0) {
-    const msg = allowUnverified
-      ? "No show survived verification — every candidate was canceled, already over, or lacked a usable identity."
-      : "No show could be confirmed against its official website. Enable “Allow unverified shows” to process directory-only listings.";
-    limitations.push(msg);
-    await finishSteps();
-    await admin
-      .from("research_runs")
-      .update({ status: "failed", error_message: msg, limitations, step_log: stepLog })
-      .eq("id", runId);
-    return;
+    const fallback = verified
+      .filter((e) => e.exclusion_reason === "EVENT_NOT_VERIFIED")
+      .sort((a, b) => b.event_score - a.event_score);
+
+    if (fallback.length > 0) {
+      limitations.push(
+        `No show could be confirmed against its official website (${fallback.length} listing(s) were unreachable or inconclusive). Continued with directory-only data — treat these leads as unverified.`,
+      );
+      await admin
+        .from("events")
+        .update({ excluded: false, exclusion_reason: null })
+        .in(
+          "id",
+          fallback.map((e) => e.id),
+        );
+      eligibleEvents = fallback.map((e) => ({ ...e, exclusion_reason: null }));
+    } else {
+      const msg =
+        "No show survived verification — every candidate was canceled, already over, or lacked a usable identity.";
+      limitations.push(msg);
+      await finishSteps();
+      await admin
+        .from("research_runs")
+        .update({ status: "failed", error_message: msg, limitations, step_log: stepLog })
+        .eq("id", runId);
+      return;
+    }
   }
+
 
   // Scrape top events for exhibitors.
   // maxLeadsPerShow = 0 means "every exhibitor we can find on the show".
