@@ -536,14 +536,35 @@ function looksLikeExhibitorContent(markdown: string): boolean {
   return hits >= 3;
 }
 
+/** Common exhibitor-directory paths to try when a site exposes no obvious link. */
+const EXHIBITOR_PATH_GUESSES = [
+  "/exhibitors",
+  "/exhibitor-list",
+  "/exhibitor-directory",
+  "/exhibitors/exhibitor-list",
+  "/attend/exhibitor-list",
+  "/show/exhibitor-list",
+];
+
+function guessExhibitorUrls(officialUrl: string): string[] {
+  try {
+    const base = new URL(officialUrl);
+    return EXHIBITOR_PATH_GUESSES.map((p) => new URL(p, `${base.protocol}//${base.host}`).toString());
+  } catch {
+    return [];
+  }
+}
+
 /**
- * Event homepages almost never list exhibitors. Follow links that look like an
- * exhibitor directory, and fall back to a web search, before giving up.
+ * Event homepages almost never list exhibitors. Collect several plausible
+ * exhibitor-directory sources (links, guessed paths, web search) so the caller
+ * can try the next one when extraction yields nothing.
  */
-async function findExhibitorListSource(
+async function findExhibitorSources(
   officialUrl: string,
   eventName: string,
-): Promise<{ url: string; markdown: string } | null> {
+  max = 3,
+): Promise<Array<{ url: string; markdown: string }>> {
   // Each scrape can take up to 90s; chained together a single dead event site
   // could eat the whole run. Give the hunt one overall budget and move on.
   const budgetMs = Number(process.env.EXHIBITOR_SOURCE_BUDGET_MS ?? 150_000);
@@ -553,29 +574,33 @@ async function findExhibitorListSource(
   const home = await firecrawlScrape(officialUrl, { formats: ["markdown", "links"] }).catch(() => null);
 
   const candidates: string[] = [];
-  for (const link of home?.links ?? []) {
-    if (EXHIBITOR_LINK_RE.test(link)) candidates.push(link);
-    if (candidates.length >= 3) break;
-  }
+  const push = (u?: string | null) => {
+    if (u && !candidates.includes(u)) candidates.push(u);
+  };
 
-  if (candidates.length === 0 && !outOfTime()) {
+  for (const link of home?.links ?? []) if (EXHIBITOR_LINK_RE.test(link)) push(link);
+  for (const g of guessExhibitorUrls(officialUrl)) push(g);
+
+  if (!outOfTime()) {
     const results = await firecrawlSearch(`${eventName} exhibitor list directory`, { limit: 3 }).catch(
       () => [] as Array<{ url: string }>,
     );
-    for (const r of results) if (r.url) candidates.push(r.url);
+    for (const r of results) push(r.url);
   }
 
-  for (const url of candidates.slice(0, 3)) {
-    if (outOfTime()) break;
+  const found: Array<{ url: string; markdown: string }> = [];
+  for (const url of candidates.slice(0, 8)) {
+    if (outOfTime() || found.length >= max) break;
     const page = await firecrawlScrape(url, { formats: ["markdown"] }).catch(() => null);
     const md = page?.markdown ?? "";
-    if (looksLikeExhibitorContent(md)) return { url, markdown: md };
+    if (looksLikeExhibitorContent(md)) found.push({ url, markdown: md });
   }
 
   const homeMd = home?.markdown ?? "";
-  if (looksLikeExhibitorContent(homeMd)) return { url: officialUrl, markdown: homeMd };
-  return null;
+  if (found.length === 0 && looksLikeExhibitorContent(homeMd)) found.push({ url: officialUrl, markdown: homeMd });
+  return found;
 }
+
 
 export async function runPipeline(
   runId: string,
