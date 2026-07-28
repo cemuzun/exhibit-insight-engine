@@ -1,5 +1,7 @@
 import { firecrawlLimiter, guarded, RateLimitError } from "./rate-limit.server";
 import { withCache, type CacheOptions } from "./firecrawl-cache.server";
+import { directFetch } from "./direct-fetch.server";
+
 
 const FIRECRAWL_V2 = "https://api.firecrawl.dev/v2";
 
