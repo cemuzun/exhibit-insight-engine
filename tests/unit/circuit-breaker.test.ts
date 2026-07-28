@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { RateLimiter } from "../../src/lib/rate-limit.server";
 
+process.env.BREAKER_COOLDOWN_MS = "100";
+process.env.BREAKER_MAX_COOLDOWN_MS = "300";
+
 const mk = () =>
   new RateLimiter("test", { concurrency: 4, requestsPerMinute: 1000, maxRetries: 0 });
 
