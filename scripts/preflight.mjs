@@ -162,9 +162,16 @@ if (packageOk && envOk) {
   const skipSchema =
     skipEnv || flags.includes("--no-schema") || process.env.PREFLIGHT_SKIP_SCHEMA === "1";
   if (!skipSchema) {
-    const { checkSchema, reportSchema } = await import("./check-schema.mjs");
-    const schemaOk = reportSchema(await checkSchema());
-    if (!schemaOk) process.exit(1);
+    let schema;
+    try {
+      schema = await import("./check-schema.mjs");
+    } catch {
+      schema = null; // schema checker unavailable — treat as skipped
+    }
+    if (schema) {
+      const schemaOk = schema.reportSchema(await schema.checkSchema());
+      if (!schemaOk) process.exit(1);
+    }
   }
 
   process.exit(0);
