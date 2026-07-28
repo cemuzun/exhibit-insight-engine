@@ -14,16 +14,16 @@ export const EventSchema = z.object({
   city: z.string().nullable().optional(),
   state: z.string().nullable().optional(),
   country: z.string().nullable().optional(),
-  event_opportunity_score: z.number(),
-  recommended_outreach_phase: z.string(),
-  estimated_exhibitor_count: z.number().nullable().optional(),
+  event_opportunity_score: z.coerce.number().catch(50).default(50),
+  recommended_outreach_phase: z.string().catch("EARLY_PLANNING").default("EARLY_PLANNING"),
+  estimated_exhibitor_count: z.coerce.number().nullable().optional(),
   rationale: z.string().nullable().optional(),
 });
 
 export const EventListSchema = z.object({
   source_classification: z.string().nullable().optional(),
-  is_directory: z.boolean(),
-  events: z.array(EventSchema),
+  is_directory: z.coerce.boolean().catch(false).default(false),
+  events: z.array(EventSchema).catch([]).default([]),
   limitations: z.array(z.string()).nullable().optional(),
 });
 
@@ -36,33 +36,33 @@ export const ExhibitorSchema = z.object({
 });
 
 export const ExhibitorListSchema = z.object({
-  exhibitors: z.array(ExhibitorSchema),
-  total_found: z.number().nullable().optional(),
+  exhibitors: z.array(ExhibitorSchema).catch([]).default([]),
+  total_found: z.coerce.number().nullable().optional(),
   extraction_complete: z.boolean().nullable().optional(),
   limitations: z.array(z.string()).nullable().optional(),
 });
 
 export const DecisionMakerSchema = z.object({
   name: z.string().nullable().optional(),
-  title: z.string(),
+  title: z.string().catch("Unknown").default("Unknown"),
   role_classification: z.string().nullable().optional(),
   professional_profile_url: z.string().nullable().optional(),
   public_business_email: z.string().nullable().optional(),
-  contact_confidence: z.number().nullable().optional(),
+  contact_confidence: z.coerce.number().nullable().optional(),
   evidence_status: z.string().nullable().optional(),
   relevance_explanation: z.string().nullable().optional(),
 });
 
 export const ScoreBreakdownSchema = z.object({
-  trade_show_activity: z.number(),
-  booth_scale_complexity: z.number(),
-  led_digital_fit: z.number(),
-  buying_capacity: z.number(),
-  timing: z.number(),
-  decision_maker_availability: z.number(),
-  growth_trigger_signals: z.number(),
-  service_fit: z.number(),
-  vendor_opportunity: z.number(),
+  trade_show_activity: z.coerce.number().catch(0).default(0),
+  booth_scale_complexity: z.coerce.number().catch(0).default(0),
+  led_digital_fit: z.coerce.number().catch(0).default(0),
+  buying_capacity: z.coerce.number().catch(0).default(0),
+  timing: z.coerce.number().catch(0).default(0),
+  decision_maker_availability: z.coerce.number().catch(0).default(0),
+  growth_trigger_signals: z.coerce.number().catch(0).default(0),
+  service_fit: z.coerce.number().catch(0).default(0),
+  vendor_opportunity: z.coerce.number().catch(0).default(0),
 });
 
 export const LeadSchema = z.object({
@@ -75,11 +75,11 @@ export const LeadSchema = z.object({
   revenue_range: z.string().nullable().optional(),
   booth_type: z.string().nullable().optional(),
   booth_size_estimate: z.string().nullable().optional(),
-  booth_analysis_confidence: z.number().nullable().optional(),
+  booth_analysis_confidence: z.coerce.number().nullable().optional(),
   recommended_services: z.array(z.string()).nullable().optional(),
-  estimated_project_value_low: z.number().nullable().optional(),
-  estimated_project_value_high: z.number().nullable().optional(),
-  score_breakdown: ScoreBreakdownSchema,
+  estimated_project_value_low: z.coerce.number().nullable().optional(),
+  estimated_project_value_high: z.coerce.number().nullable().optional(),
+  score_breakdown: ScoreBreakdownSchema.catch({} as never).default({} as never),
   decision_makers: z.array(DecisionMakerSchema).nullable().optional(),
   recommended_outreach_date: z.string().nullable().optional(),
   recommended_next_action: z.string().nullable().optional(),
@@ -94,15 +94,15 @@ export const LeadSchema = z.object({
 });
 
 export const ExecSummarySchema = z.object({
-  shows_reviewed: z.number(),
-  exhibitors_identified: z.number(),
-  qualified_accounts: z.number(),
-  verified_decision_makers: z.number(),
-  tier_1_leads: z.number(),
+  shows_reviewed: z.coerce.number().catch(0).default(0),
+  exhibitors_identified: z.coerce.number().catch(0).default(0),
+  qualified_accounts: z.coerce.number().catch(0).default(0),
+  verified_decision_makers: z.coerce.number().catch(0).default(0),
+  tier_1_leads: z.coerce.number().catch(0).default(0),
   top_industries: z.array(z.string()).nullable().optional(),
   top_shows: z.array(z.string()).nullable().optional(),
   main_limitations: z.array(z.string()).nullable().optional(),
-  recommended_immediate_action: z.string(),
+  recommended_immediate_action: z.string().catch("").default(""),
 });
 
 export type EventRecord = z.infer<typeof EventSchema>;
