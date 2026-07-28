@@ -10,6 +10,7 @@ import { RunProgress, type StepEntry, type RunCounters } from "@/components/RunP
 import { ScoringFeed, type ScoringFeedEntry } from "@/components/ScoringFeed";
 
 import { ExhibitorsTable, type ExhibitorRow } from "@/components/ExhibitorsTable";
+import { LiveExhibitors, type ExhibitorSample } from "@/components/LiveExhibitors";
 import {
   ResultFilters,
   DEFAULT_FILTERS,
@@ -257,12 +258,15 @@ function RunDetail() {
         />
       )}
 
-
-
-
-
-
-
+      {(() => {
+        const c = ((run as { counters?: unknown }).counters ?? {}) as {
+          exhibitor_samples?: ExhibitorSample[];
+          exhibitors_found?: number;
+        };
+        const samples = c.exhibitor_samples ?? [];
+        if (typedLeads.length > 0 || samples.length === 0) return null;
+        return <LiveExhibitors samples={samples} total={c.exhibitors_found ?? samples.length} />;
+      })()}
 
 
       {run.status === "failed" && (

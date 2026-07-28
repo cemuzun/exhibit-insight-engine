@@ -1049,7 +1049,14 @@ export async function runPipeline(
     scoring_feed: [] as ScoringFeedEntry[],
     /** Per-show extraction diagnostics shown in the run debug panel. */
     show_debug: [] as ShowDebugEntry[],
-
+    /** Most recently extracted exhibitors, newest first (live preview list). */
+    exhibitor_samples: [] as {
+      company: string;
+      booth: string | null;
+      show: string;
+      source: string;
+      at: string;
+    }[],
   };
   const bumpCounters = async (patch: Partial<typeof counters>) => {
     Object.assign(counters, patch);
@@ -1728,6 +1735,8 @@ ${sourceLinks.slice(0, 80).join("\n")}`,
     let exhibitors: ExtractedExhibitor[] = [];
     const metrics = emptyMetrics();
     const confidences: number[] = [];
+    /** Newly extracted exhibitors awaiting flush into the live preview list. */
+    const pendingSamples: typeof counters.exhibitor_samples = [];
 
     /**
      * Attach provenance, validate the evidence against the page it came from,
@@ -1800,6 +1809,13 @@ ${sourceLinks.slice(0, 80).join("\n")}`,
         }
 
         exhibitors.push(record);
+        pendingSamples.push({
+          company: record.company_name,
+          booth: record.booth_number ?? null,
+          show: ev.event_name,
+          source: src.url,
+          at: new Date().toISOString(),
+        });
         seen.add(record.exhibitor_instance_key);
         confidences.push(confidence);
         metrics.records_accepted += 1;
@@ -1829,6 +1845,10 @@ ${sourceLinks.slice(0, 80).join("\n")}`,
         exhibitor_pages_parsed: counters.exhibitor_pages_parsed + 1,
         exhibitor_pages_with_hits: counters.exhibitor_pages_with_hits + (added > 0 ? 1 : 0),
         exhibitors_found: counters.exhibitors_found + added,
+        exhibitor_samples: [
+          ...pendingSamples.splice(0).reverse(),
+          ...counters.exhibitor_samples,
+        ].slice(0, 100),
         ...(added > 0
           ? { last_exhibitor_at: new Date().toISOString(), last_exhibitor_source: host }
           : {}),
