@@ -153,6 +153,37 @@ function RunDetail() {
   );
 }
 
+function RerunButton({ runId }: { runId: string }) {
+  const rerun = useServerFn(rerunResearch);
+  const qc = useQueryClient();
+  const [busy, setBusy] = useState(false);
+
+  async function go() {
+    if (!window.confirm("Re-run this research? Existing events and leads for this run will be replaced.")) return;
+    setBusy(true);
+    try {
+      await rerun({ data: { runId } });
+      toast.success("Re-run complete");
+    } catch (e) {
+      toast.error((e as Error).message || "Re-run failed");
+    } finally {
+      setBusy(false);
+      qc.invalidateQueries({ queryKey: ["run", runId] });
+    }
+  }
+
+  return (
+    <button
+      onClick={go}
+      disabled={busy}
+      className="rounded-md border border-border bg-card px-3 py-2 text-xs font-medium hover:bg-muted disabled:opacity-50"
+      title="Run the research pipeline again for this URL, replacing existing results"
+    >
+      {busy ? "Re-running…" : "Re-run"}
+    </button>
+  );
+}
+
 function CrmSyncButton({ runId, disabled }: { runId: string; disabled?: boolean }) {
   const sync = useServerFn(syncRunToCrm);
   const [busy, setBusy] = useState(false);
