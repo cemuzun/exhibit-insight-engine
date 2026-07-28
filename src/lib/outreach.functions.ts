@@ -15,6 +15,7 @@ import {
   type PersonalizationFact,
 } from "./email-gate";
 import { buildSubject, validateEmail } from "./email-validator";
+import type { Json } from "@/integrations/supabase/types";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
@@ -103,9 +104,9 @@ export const buildOutreachQueue = createServerFn({ method: "POST" })
       status: string;
       draft_status: string;
       blocked_reasons: string[];
-      personalization_fact: Record<string, unknown>;
+      personalization_fact: Json;
       service_offered: string;
-      validation: Record<string, unknown>;
+      validation: Json;
       outreach_phase: string;
       recommended_send_date: string;
       follow_up_date: string;
@@ -209,9 +210,9 @@ export const buildOutreachQueue = createServerFn({ method: "POST" })
           status: "draft",
           draft_status: validation.valid ? "READY" : "NEEDS_REVIEW",
           blocked_reasons: validation.errors.map((e) => e.code),
-          personalization_fact: { ...gate.fact },
+          personalization_fact: { ...gate.fact } as unknown as Json,
           service_offered: gate.service,
-          validation: { ...validation },
+          validation: { ...validation } as unknown as Json,
           outreach_phase: phase,
           recommended_send_date: dates.recommended_send_date,
           follow_up_date: dates.follow_up_date,
