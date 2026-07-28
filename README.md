@@ -36,8 +36,23 @@ npm run verify:ai
 - The package is installed in `node_modules`.
 - The installed version matches the exact version in `package.json` (and the lockfile for pinned packages).
 - Required environment variables are set and non-empty.
+- **Smoke test:** a TypeScript compile (`tsc --noEmit`) plus a minimal runtime script that imports and initialises `zod`, `ai` and `@ai-sdk/openai-compatible`, so a broken install fails here rather than at request time.
 
-If everything passes, you will see a list of required packages with their installed and expected versions, plus a list of configured environment variables.
+If everything passes, you will see a list of required packages with their installed and expected versions, a list of configured environment variables, and `smoke: PASSED`.
+
+Related scripts:
+
+| Script | What it runs |
+| --- | --- |
+| `npm run verify:ai` | dependency + env checks, then the smoke test (type compile + runtime script) |
+| `npm run verify:ai:deps` | dependency/lockfile/env checks only (add `-- --no-env` to skip env vars) |
+| `npm run verify:ai:build` | dependency checks, then a full production build as the smoke step |
+| `npm run smoke` | the smoke test on its own |
+
+Build scripts (`dev`, `build`, `build:dev`) run `verify:ai:deps -- --no-env`, because deploy-time secrets are injected by the platform and are not present in the build environment.
+
+When the smoke test fails it prints the failing step, the last lines of its output, and the exact command to re-run.
+
 
 ### Installing missing dependencies
 
