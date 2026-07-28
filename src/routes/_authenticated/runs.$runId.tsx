@@ -177,6 +177,20 @@ function RunDetail() {
         />
       )}
 
+      {inProgress && (
+        <div className="mb-6 flex items-center gap-2 rounded-md border border-border bg-card px-4 py-2 text-xs text-muted-foreground">
+          <span className="relative flex h-2 w-2">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
+            <span className="relative inline-flex h-2 w-2 rounded-full bg-primary" />
+          </span>
+          Live — results appear below as they're found:{" "}
+          <span className="font-mono text-foreground">{events.length}</span> shows,{" "}
+          <span className="font-mono text-foreground">{typedLeads.length}</span> leads so far
+        </div>
+      )}
+
+
+
       {!inProgress && (((run as { step_log?: unknown[] }).step_log ?? []) as StepEntry[]).length > 0 && (
         <RunTimings stepLog={((run as { step_log?: unknown }).step_log ?? []) as StepEntry[]} />
       )}
