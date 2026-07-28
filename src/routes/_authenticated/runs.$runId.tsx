@@ -80,7 +80,7 @@ function tierLabel(t: string | null) {
 function RunDetail() {
   const { runId } = Route.useParams();
   const get = useServerFn(getRun);
-  const [mode, setMode] = useState<"dashboard" | "report">("dashboard");
+  const [mode, setMode] = useState<"dashboard" | "exhibitors" | "report">("dashboard");
   const [selected, setSelected] = useState<Lead | null>(null);
   const [filters, setFilters] = useState<ResultFilterState>(DEFAULT_FILTERS);
   const resume = useServerFn(resumeStalledRun);
