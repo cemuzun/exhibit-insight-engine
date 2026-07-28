@@ -139,3 +139,34 @@ export function RunProgress({
     </div>
   );
 }
+
+export function RunTimings({ stepLog }: { stepLog: StepEntry[] }) {
+  const total = stepLog.reduce((a, s) => a + (s.duration_ms ?? 0), 0);
+  return (
+    <div className="mb-6 rounded-lg border border-border bg-card p-4">
+      <div className="flex items-baseline justify-between">
+        <div className="text-sm font-medium">Step timings</div>
+        <div className="font-mono text-xs text-muted-foreground">{fmtMs(total)} total</div>
+      </div>
+      <ul className="mt-3 space-y-1.5">
+        {stepLog.map((s, i) => {
+          const ms = s.duration_ms ?? 0;
+          const share = total > 0 ? Math.round((ms / total) * 100) : 0;
+          return (
+            <li key={`${s.key}-${i}`} className="text-[11px]">
+              <div className="flex items-baseline justify-between gap-3">
+                <span className="text-muted-foreground">{labelFor(s.key)}</span>
+                <span className="shrink-0 font-mono text-muted-foreground">
+                  {fmtMs(ms)} · {share}%
+                </span>
+              </div>
+              <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-muted">
+                <div className="h-full rounded-full bg-primary/70" style={{ width: `${share}%` }} />
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
