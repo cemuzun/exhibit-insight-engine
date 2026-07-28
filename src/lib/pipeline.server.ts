@@ -1049,7 +1049,14 @@ export async function runPipeline(
     scoring_feed: [] as ScoringFeedEntry[],
     /** Per-show extraction diagnostics shown in the run debug panel. */
     show_debug: [] as ShowDebugEntry[],
-
+    /** Most recently extracted exhibitors, newest first (live preview list). */
+    exhibitor_samples: [] as {
+      company: string;
+      booth: string | null;
+      show: string;
+      source: string;
+      at: string;
+    }[],
   };
   const bumpCounters = async (patch: Partial<typeof counters>) => {
     Object.assign(counters, patch);
