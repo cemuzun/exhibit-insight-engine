@@ -702,6 +702,19 @@ ${sourceLinks.slice(0, 80).join("\n")}`,
     );
   }
 
+  if (eligible.length === 0 && eventList.events.length > 0) {
+    const msg = `All ${eventList.events.length} show(s) found start in under ${minLeadDays} days or are already past. Lower "Min days until show" or use a directory page that lists later dates.`;
+    limitations.push(msg);
+    await finishSteps();
+    await admin
+      .from("research_runs")
+      .update({ status: "failed", error_message: msg, limitations, step_log: stepLog })
+      .eq("id", runId);
+    return;
+  }
+
+
+
   // Persist events
   const eventRows = eligible
     .sort((a, b) => b.event_opportunity_score - a.event_opportunity_score)
