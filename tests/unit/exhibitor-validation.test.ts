@@ -75,3 +75,29 @@ describe("exhibitor validation", () => {
     expect(hasCompanyNameStructure("Register Now")).toBe(false);
   });
 });
+
+describe("account chrome and dates", () => {
+  it("rejects login/date/nav strings", () => {
+    for (const name of [
+      "Log In / Create Account",
+      "OCTOBER 12-15, 2026",
+      "Login to email Doug Wood",
+      "↑ Back to Top",
+      "Add to Planner",
+      "© 2026 Show Org",
+    ]) {
+      expect(
+        validateExhibitorRow({
+          companyName: name,
+          sourceUrl: "https://show.com/exhibitors",
+          sourceMarkdown: exhibitorPage,
+        }).verdict,
+      ).toBe("reject");
+    }
+  });
+
+  it("still accepts real companies", () => {
+    expect(hasCompanyNameStructure("Hennig, Inc.")).toBe(true);
+    expect(hasCompanyNameStructure("Hexagon")).toBe(true);
+  });
+});

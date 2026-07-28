@@ -53,8 +53,34 @@ export function isLikelyCompanyName(value: string): boolean {
   }
   if (/^(decorative|mobile app|banner|close this banner)$/i.test(name)) return false;
   if (/^(facebook|linkedin|instagram|youtube|x|twitter)$/i.test(name)) return false;
+  if (HARD_REJECT_RE.some((re) => re.test(name))) return false;
   return /[A-Za-z0-9]/.test(name);
 }
+
+/** Account chrome, dates, and UI actions that a company name can never be. */
+const HARD_REJECT_RE: RegExp[] = [
+  // Account / session chrome — "Log In / Create Account", "Login to email Doug Wood"
+  /^(log\s?in|log\s?out|sign\s?in|sign\s?up|sign\s?out|register|create\s+(an\s+)?account|my\s+account|account)\b/i,
+  /\b(log\s?in|sign\s?in|create\s+account|forgot\s+password)\b/i,
+  /\blogin\b/i,
+  // Nav separators / breadcrumbs
+  /\s[/|»›>]\s/,
+  /^[↑↓←→«»▲▼•]/,
+  /\bback to top\b/i,
+  // Dates: "OCTOBER 12-15, 2026", "Oct 12 - 15, 2026", "12-15 October 2026"
+  /\b(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sept?|oct|nov|dec)\b[^a-z]{0,12}\d{1,2}\s*(?:[-–—]\s*\d{1,2})?\s*,?\s*(20\d{2})?/i,
+  /^\d{1,2}\s*[-–—]\s*\d{1,2}\b/,
+  /\b20\d{2}\s*[-–—]\s*20\d{2}\b/,
+  // UI actions
+  /^(add to|share|print|export|download|view|show|hide|filter|sort|apply|clear|select|search|email|call|visit|open|close|next|prev)\b/i,
+  /\b(click here|read more|learn more|view details|add to planner|show specials)\b/i,
+  // Copyright / legal chrome
+  /©|\ball rights reserved\b|\bcopyright\b/i,
+  // Sentences and labels
+  /[:;]$/,
+  /^\W*$/,
+];
+
 
 
 function firstCompanyWebsite(markdown: string): string | null {

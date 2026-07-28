@@ -1832,13 +1832,18 @@ ${sourceLinks.slice(0, 80).join("\n")}`,
         }
 
         exhibitors.push(record);
-        pendingSamples.push({
-          company: record.company_name,
-          booth: record.booth_number ?? null,
-          show: ev.event_name,
-          source: src.url,
-          at: new Date().toISOString(),
-        });
+        // Only confirmed rows appear in the live preview list; downgraded
+        // (UNCERTAIN) rows stay out of the user-facing exhibitor feed.
+        if (status === "CONFIRMED") {
+          pendingSamples.push({
+            company: record.company_name,
+            booth: record.booth_number ?? null,
+            show: ev.event_name,
+            source: src.url,
+            at: new Date().toISOString(),
+          });
+        }
+
         seen.add(record.exhibitor_instance_key);
         confidences.push(confidence);
         metrics.records_accepted += 1;
