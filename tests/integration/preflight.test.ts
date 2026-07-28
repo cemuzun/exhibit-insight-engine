@@ -5,12 +5,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const SCRIPT_SRC = join(process.cwd(), "scripts", "preflight.mjs");
+const LIST_SRC = join(process.cwd(), "scripts", "required-packages.mjs");
 
 function scaffold(pkgs: string[]) {
   const dir = mkdtempSync(join(tmpdir(), "preflight-"));
   writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "t", version: "0.0.0" }));
   mkdirSync(join(dir, "scripts"), { recursive: true });
   cpSync(SCRIPT_SRC, join(dir, "scripts", "preflight.mjs"));
+  cpSync(LIST_SRC, join(dir, "scripts", "required-packages.mjs"));
+
   const nm = join(dir, "node_modules");
   for (const p of pkgs) {
     const target = join(nm, ...p.split("/"));
