@@ -248,6 +248,49 @@ ${lastText.slice(0, 20000)}`,
 
 type ProgressFn = (stage: string, message: string) => Promise<void>;
 
+const EXHIBITOR_LINK_RE =
+  /(exhibitor|exhibit)[-_/]?(list|directory|search|hall|floor ?plan|showcase)|\/exhibitors?\b|who-?s-?exhibiting/i;
+
+function looksLikeExhibitorContent(markdown: string): boolean {
+  if (markdown.length < 400) return false;
+  const hits = (markdown.match(/booth|stand\s?#|exhibitor/gi) ?? []).length;
+  return hits >= 3;
+}
+
+/**
+ * Event homepages almost never list exhibitors. Follow links that look like an
+ * exhibitor directory, and fall back to a web search, before giving up.
+ */
+async function findExhibitorListSource(
+  officialUrl: string,
+  eventName: string,
+): Promise<{ url: string; markdown: string } | null> {
+  const home = await firecrawlScrape(officialUrl, { formats: ["markdown", "links"] }).catch(() => null);
+
+  const candidates: string[] = [];
+  for (const link of home?.links ?? []) {
+    if (EXHIBITOR_LINK_RE.test(link)) candidates.push(link);
+    if (candidates.length >= 3) break;
+  }
+
+  if (candidates.length === 0) {
+    const results = await firecrawlSearch(`${eventName} exhibitor list directory`, { limit: 3 }).catch(
+      () => [] as Array<{ url: string }>,
+    );
+    for (const r of results) if (r.url) candidates.push(r.url);
+  }
+
+  for (const url of candidates.slice(0, 3)) {
+    const page = await firecrawlScrape(url, { formats: ["markdown"] }).catch(() => null);
+    const md = page?.markdown ?? "";
+    if (looksLikeExhibitorContent(md)) return { url, markdown: md };
+  }
+
+  const homeMd = home?.markdown ?? "";
+  if (looksLikeExhibitorContent(homeMd)) return { url: officialUrl, markdown: homeMd };
+  return null;
+}
+
 export async function runPipeline(
   runId: string,
   input: {
@@ -455,7 +498,7 @@ ${sourceLinks.slice(0, 80).join("\n")}`;
 
   // Scrape top events for exhibitors
   const maxLeads = input.filters.maxLeadsPerShow ?? 10;
-  const topEvents = eventsInDb.slice(0, eventList.is_directory ? 2 : 1);
+  const topEvents = eventsInDb.slice(0, eventList.is_directory ? 4 : 1);
 
   const allLeads: Array<{ lead: LeadRecord; eventId: string; eventName: string; eventDate: string | null; boothNumber: string | null }> = [];
 
@@ -467,11 +510,19 @@ ${sourceLinks.slice(0, 80).join("\n")}`;
 
     if (eventList.is_directory && ev.official_url) {
       try {
-        const scraped = await withHeartbeat("extract_exhibitors", `Fetching event page for ${ev.event_name}`, () =>
-          firecrawlScrape(ev.official_url, { formats: ["markdown", "links"] }),
+        const found = await withHeartbeat(
+          "extract_exhibitors",
+          `Looking for the exhibitor list of ${ev.event_name}`,
+          () => findExhibitorListSource(ev.official_url, ev.event_name),
         );
-        exhibitorSource = scraped.markdown ?? "";
-        exhibitorSourceUrl = ev.official_url;
+        if (!found) {
+          limitations.push(
+            `No public exhibitor list found for ${ev.event_name} — event site did not expose an exhibitor directory.`,
+          );
+          continue;
+        }
+        exhibitorSource = found.markdown;
+        exhibitorSourceUrl = found.url;
       } catch (e) {
         limitations.push(`Could not scrape ${ev.event_name}: ${(e as Error).message}`);
         continue;
