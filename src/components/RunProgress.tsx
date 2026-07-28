@@ -86,7 +86,6 @@ export function RunProgress({
   const current = stage ?? "queued";
   let idx = STAGES.findIndex((s) => s.key === current);
   if (idx < 0) idx = 0;
-  const pct = Math.round(((idx + 0.5) / STAGES.length) * 100);
   const slow = sinceUpdate !== null && sinceUpdate > 45;
 
   const totalKnown = stepLog.reduce((a, s) => a + (s.duration_ms ?? 0), 0);
