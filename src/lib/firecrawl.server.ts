@@ -159,9 +159,20 @@ export async function firecrawlMap(
   const { value: body } = await withCache<{ links?: unknown; data?: { links?: unknown } } | null>(
     "map",
     payload,
-    () => firecrawlPost<{ links?: unknown; data?: { links?: unknown } } | null>("/map", payload, "map"),
+    async () => {
+      if (cheapModeEnabled()) {
+        const free = await sitemapUrls(url, opts?.limit ?? 100, opts?.search);
+        if (free.length >= 5) {
+          fetchStats.direct += 1;
+          return { links: free };
+        }
+      }
+      fetchStats.firecrawl += 1;
+      return firecrawlPost<{ links?: unknown; data?: { links?: unknown } } | null>("/map", payload, "map");
+    },
     opts?.cache ?? {},
   );
+
   const raw = (body?.links ?? body?.data?.links ?? []) as Array<string | { url?: string }>;
   return raw
     .map((l) => (typeof l === "string" ? l : l?.url))
