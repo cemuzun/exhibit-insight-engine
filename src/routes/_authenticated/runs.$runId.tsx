@@ -4,6 +4,8 @@ import { useQuery } from "@tanstack/react-query";
 import { useState, useMemo } from "react";
 import { getRun } from "@/lib/research.functions";
 import { syncRunToCrm } from "@/lib/crm.functions";
+import { listEmailTemplates } from "@/lib/templates.functions";
+import { renderForLead, type EmailTemplate } from "@/lib/email-template-engine";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/runs/$runId")({
@@ -284,6 +286,12 @@ function Stat({ label, value, accent }: { label: string; value: number | string;
 
 function LeadDrawer({ lead, onClose }: { lead: Lead; onClose: () => void }) {
   const [tab, setTab] = useState<"overview" | "booth" | "dm" | "outreach" | "sources" | "json">("overview");
+  const listTemplates = useServerFn(listEmailTemplates);
+  const { data: templates } = useQuery({ queryKey: ["email-templates"], queryFn: () => listTemplates() });
+  const templated = useMemo(
+    () => (templates ? renderForLead(templates as EmailTemplate[], lead) : null),
+    [templates, lead],
+  );
   const copyJson = () => { navigator.clipboard.writeText(JSON.stringify(lead.raw, null, 2)); toast.success("Copied to clipboard"); };
 
   return (
@@ -399,9 +407,46 @@ function LeadDrawer({ lead, onClose }: { lead: Lead; onClose: () => void }) {
               {lead.recommended_outreach_date && (
                 <KV label="Recommended outreach date" value={lead.recommended_outreach_date} />
               )}
+              {templated && (
+                <div>
+                  <div className="flex items-center justify-between">
+                    <div className="text-xs uppercase tracking-wider text-muted-foreground">
+                      Your template — {templated.template.name}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="rounded border border-border px-1.5 py-0.5 text-[10px] uppercase text-muted-foreground">
+                        evidence {templated.evidence}
+                      </span>
+                      <button
+                        className="text-xs text-primary hover:underline"
+                        onClick={() => {
+                          navigator.clipboard.writeText(`Subject: ${templated.subject}\n\n${templated.body}`);
+                          toast.success("Template draft copied");
+                        }}
+                      >
+                        Copy
+                      </button>
+                      <Link to="/templates" className="text-xs text-primary hover:underline">Edit</Link>
+                    </div>
+                  </div>
+                  <div className="mt-1 text-sm font-medium">{templated.subject}</div>
+                  <pre className="mt-1 whitespace-pre-wrap rounded border border-border bg-background p-3 text-xs font-sans">{templated.body}</pre>
+                  {templated.missing.length > 0 && (
+                    <p className="mt-1 text-xs text-warning">
+                      Unverified fields left as placeholders: {templated.missing.join(", ")}
+                    </p>
+                  )}
+                </div>
+              )}
+              {!templated && (
+                <p className="text-xs text-muted-foreground">
+                  No saved email template matches this lead.{" "}
+                  <Link to="/templates" className="text-primary hover:underline">Create one</Link>.
+                </p>
+              )}
               {lead.personalized_email && (
                 <div>
-                  <div className="text-xs uppercase tracking-wider text-muted-foreground">Email draft</div>
+                  <div className="text-xs uppercase tracking-wider text-muted-foreground">AI email draft</div>
                   <pre className="mt-1 whitespace-pre-wrap rounded border border-border bg-background p-3 text-xs font-sans">{lead.personalized_email}</pre>
                 </div>
               )}
