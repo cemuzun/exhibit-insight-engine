@@ -544,6 +544,12 @@ async function findExhibitorListSource(
   officialUrl: string,
   eventName: string,
 ): Promise<{ url: string; markdown: string } | null> {
+  // Each scrape can take up to 90s; chained together a single dead event site
+  // could eat the whole run. Give the hunt one overall budget and move on.
+  const budgetMs = Number(process.env.EXHIBITOR_SOURCE_BUDGET_MS ?? 150_000);
+  const deadline = Date.now() + budgetMs;
+  const outOfTime = () => Date.now() >= deadline;
+
   const home = await firecrawlScrape(officialUrl, { formats: ["markdown", "links"] }).catch(() => null);
 
   const candidates: string[] = [];
@@ -552,7 +558,7 @@ async function findExhibitorListSource(
     if (candidates.length >= 3) break;
   }
 
-  if (candidates.length === 0) {
+  if (candidates.length === 0 && !outOfTime()) {
     const results = await firecrawlSearch(`${eventName} exhibitor list directory`, { limit: 3 }).catch(
       () => [] as Array<{ url: string }>,
     );
@@ -560,6 +566,7 @@ async function findExhibitorListSource(
   }
 
   for (const url of candidates.slice(0, 3)) {
+    if (outOfTime()) break;
     const page = await firecrawlScrape(url, { formats: ["markdown"] }).catch(() => null);
     const md = page?.markdown ?? "";
     if (looksLikeExhibitorContent(md)) return { url, markdown: md };
