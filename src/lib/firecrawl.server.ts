@@ -1,5 +1,7 @@
 import { firecrawlLimiter, guarded, RateLimitError } from "./rate-limit.server";
 import { withCache, type CacheOptions } from "./firecrawl-cache.server";
+import { directFetch } from "./direct-fetch.server";
+
 
 const FIRECRAWL_V2 = "https://api.firecrawl.dev/v2";
 
@@ -69,7 +71,16 @@ type ScrapeResult = {
   metadata?: { title?: string; description?: string; sourceURL?: string; statusCode?: number };
   /** true when the page came from the cache instead of a fresh fetch */
   fromCache?: boolean;
+  /** true when a free direct fetch served the page (no Firecrawl credit spent) */
+  free?: boolean;
 };
+
+/** Counters so the UI can show how much of the crawl stayed free. */
+export const fetchStats = { direct: 0, firecrawl: 0 };
+
+function cheapModeEnabled() {
+  return process.env.SCRAPE_MODE !== "firecrawl_only";
+}
 
 export async function firecrawlScrape(
   url: string,
@@ -80,6 +91,8 @@ export async function firecrawlScrape(
     /** e.g. ["pdf"] so Firecrawl converts a linked PDF into markdown. */
     parsers?: string[];
     cache?: CacheOptions;
+    /** skip the free direct fetch (JS-rendered page, PDF, etc.) */
+    forceFirecrawl?: boolean;
   },
 ): Promise<ScrapeResult> {
   const payload = {
@@ -89,10 +102,36 @@ export async function firecrawlScrape(
     waitFor: opts?.waitFor,
     parsers: opts?.parsers,
   };
+
+  const canTryFree =
+    cheapModeEnabled() &&
+    !opts?.forceFirecrawl &&
+    !opts?.waitFor &&
+    !opts?.parsers?.length &&
+    !/\.pdf(\?|$)/i.test(url);
+
+  const produce = async (): Promise<({ data?: ScrapeResult } & ScrapeResult) | null> => {
+    if (canTryFree) {
+      const direct = await directFetch(url);
+      if (direct.ok) {
+        fetchStats.direct += 1;
+        return {
+          markdown: direct.markdown,
+          html: direct.html,
+          links: direct.links,
+          metadata: { title: direct.title, sourceURL: url, statusCode: direct.status },
+          free: true,
+        };
+      }
+    }
+    fetchStats.firecrawl += 1;
+    return firecrawlPost<({ data?: ScrapeResult } & ScrapeResult) | null>("/scrape", payload, "scrape");
+  };
+
   const { value: body, cached } = await withCache<({ data?: ScrapeResult } & ScrapeResult) | null>(
     "scrape",
     payload,
-    () => firecrawlPost<({ data?: ScrapeResult } & ScrapeResult) | null>("/scrape", payload, "scrape"),
+    produce,
     opts?.cache ?? {},
   );
   const b = body ?? {};
@@ -102,9 +141,64 @@ export async function firecrawlScrape(
     html: b.html ?? b.data?.html,
     links: b.links ?? b.data?.links,
     metadata: b.metadata ?? b.data?.metadata,
+    free: b.free,
     fromCache: cached,
   };
 }
+
+
+/** Free URL discovery via robots.txt / sitemap.xml (no Firecrawl credits). */
+async function sitemapUrls(url: string, limit: number, search?: string): Promise<string[]> {
+  let origin: string;
+  try {
+    origin = new URL(url).origin;
+  } catch {
+    return [];
+  }
+  const seeds = [`${origin}/sitemap.xml`, `${origin}/sitemap_index.xml`, `${origin}/sitemap-index.xml`];
+  try {
+    const robots = await fetch(`${origin}/robots.txt`, { signal: AbortSignal.timeout(8000) });
+    if (robots.ok) {
+      const txt = await robots.text();
+      for (const m of txt.matchAll(/sitemap:\s*(\S+)/gi)) seeds.push(m[1]);
+    }
+  } catch {
+    /* ignore */
+  }
+
+  const seen = new Set<string>();
+  const out = new Set<string>();
+  const queue = [...new Set(seeds)];
+  let fetched = 0;
+
+  while (queue.length && out.size < limit && fetched < 12) {
+    const sm = queue.shift()!;
+    if (seen.has(sm)) continue;
+    seen.add(sm);
+    fetched += 1;
+    let xml = "";
+    try {
+      const r = await fetch(sm, { signal: AbortSignal.timeout(10_000) });
+      if (!r.ok) continue;
+      xml = await r.text();
+    } catch {
+      continue;
+    }
+    const locs = [...xml.matchAll(/<loc>\s*([^<\s]+)\s*<\/loc>/gi)].map((m) => m[1]);
+    const isIndex = /<sitemapindex/i.test(xml);
+    for (const loc of locs) {
+      if (isIndex || /\.xml(\.gz)?$/i.test(loc)) {
+        if (queue.length < 12) queue.push(loc);
+      } else if (/^https?:\/\//i.test(loc)) {
+        if (search && !loc.toLowerCase().includes(search.toLowerCase())) continue;
+        out.add(loc);
+        if (out.size >= limit) break;
+      }
+    }
+  }
+  return [...out];
+}
+
 
 /**
  * Fast URL discovery for a site. Surfaces deep pages (and PDFs) that are never
@@ -118,9 +212,20 @@ export async function firecrawlMap(
   const { value: body } = await withCache<{ links?: unknown; data?: { links?: unknown } } | null>(
     "map",
     payload,
-    () => firecrawlPost<{ links?: unknown; data?: { links?: unknown } } | null>("/map", payload, "map"),
+    async () => {
+      if (cheapModeEnabled()) {
+        const free = await sitemapUrls(url, opts?.limit ?? 100, opts?.search);
+        if (free.length >= 5) {
+          fetchStats.direct += 1;
+          return { links: free };
+        }
+      }
+      fetchStats.firecrawl += 1;
+      return firecrawlPost<{ links?: unknown; data?: { links?: unknown } } | null>("/map", payload, "map");
+    },
     opts?.cache ?? {},
   );
+
   const raw = (body?.links ?? body?.data?.links ?? []) as Array<string | { url?: string }>;
   return raw
     .map((l) => (typeof l === "string" ? l : l?.url))
