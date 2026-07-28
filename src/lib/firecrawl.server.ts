@@ -22,10 +22,18 @@ async function firecrawlPost<T>(path: string, payload: unknown, label: string): 
   return guarded(
     firecrawlLimiter,
     async () => {
+      const timeoutMs = Number(process.env.FIRECRAWL_TIMEOUT_MS ?? 90_000);
       const res = await fetch(`${FIRECRAWL_V2}${path}`, {
         method: "POST",
         headers: { Authorization: `Bearer ${key()}`, "Content-Type": "application/json" },
         body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(timeoutMs),
+      }).catch((e: Error) => {
+        throw new Error(
+          e.name === "TimeoutError" || e.name === "AbortError"
+            ? `Firecrawl ${label} timed out after ${Math.round(timeoutMs / 1000)}s`
+            : `Firecrawl ${label} request failed: ${e.message}`,
+        );
       });
       const body = await res.json().catch(() => null);
       if (!res.ok) {

@@ -71,8 +71,20 @@ async function generateStructured<T>(
 
   // Every model call goes through the shared LLM limiter (concurrency cap +
   // per-minute throttle) and is retried with exponential backoff on 429/5xx.
+  const llmTimeoutMs = Number(process.env.LLM_TIMEOUT_MS ?? 120_000);
   const call = (args: Parameters<typeof generateText>[0]) =>
-    guarded(llmLimiter, () => generateText(args), { label: "llm generate" });
+    guarded(
+      llmLimiter,
+      () =>
+        generateText({ ...args, abortSignal: AbortSignal.timeout(llmTimeoutMs) }).catch(
+          (e: Error) => {
+            if (e.name === "TimeoutError" || e.name === "AbortError")
+              throw new Error(`Model call timed out after ${Math.round(llmTimeoutMs / 1000)}s`);
+            throw e;
+          },
+        ),
+      { label: "llm generate" },
+    );
 
   try {
     const { output } = await call({
