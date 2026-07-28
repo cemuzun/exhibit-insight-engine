@@ -6,9 +6,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { getRun, rerunResearch, resumeStalledRun } from "@/lib/research.functions";
 import { syncRunToCrm } from "@/lib/crm.functions";
 import { CrmSyncPreview } from "@/components/CrmSyncPreview";
-import { RunProgress, RunTimings, type StepEntry, type RunCounters } from "@/components/RunProgress";
+import { RunProgress, type StepEntry, type RunCounters } from "@/components/RunProgress";
 import { ScoringFeed, type ScoringFeedEntry } from "@/components/ScoringFeed";
-import { DebugPanel, type ShowDebugEntry } from "@/components/DebugPanel";
 
 import { ExhibitorsTable, type ExhibitorRow } from "@/components/ExhibitorsTable";
 import {
@@ -231,7 +230,7 @@ function RunDetail() {
               params={{ runId }}
               className="rounded-md border border-border bg-card px-3 py-2 text-xs text-muted-foreground hover:text-foreground"
             >
-              Live scoring decisions
+              Activity & diagnostics
               <span className="ml-1.5 font-mono">{scoringEntries.length}</span>
             </Link>
           )}
@@ -254,29 +253,15 @@ function RunDetail() {
           counters={((run as { counters?: unknown }).counters ?? {}) as RunCounters}
           liveEvents={events.length}
           liveLeads={typedLeads.length}
+          showSteps={false}
         />
       )}
 
 
 
 
-      <div className="mb-6">
-        <DebugPanel
-          shows={
-            (((run as { counters?: { show_debug?: unknown } }).counters?.show_debug ?? []) as ShowDebugEntry[])
-          }
-          skipReasons={(
-            ((run as { counters?: { scoring_feed?: unknown } }).counters?.scoring_feed ?? []) as ScoringFeedEntry[]
-          )
-            .filter((e) => e.status === "skipped")
-            .map((e) => ({ at: e.at, show: e.show, reason: e.reason }))}
-        />
-      </div>
 
 
-      {!inProgress && (((run as { step_log?: unknown[] }).step_log ?? []) as StepEntry[]).length > 0 && (
-        <RunTimings stepLog={((run as { step_log?: unknown }).step_log ?? []) as StepEntry[]} />
-      )}
 
 
 

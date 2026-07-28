@@ -68,6 +68,7 @@ export function RunProgress({
   counters = {},
   liveEvents = 0,
   liveLeads = 0,
+  showSteps = true,
 }: {
   stage: string | null;
   message: string | null;
@@ -77,6 +78,8 @@ export function RunProgress({
   counters?: RunCounters;
   liveEvents?: number;
   liveLeads?: number;
+  /** Show the per-step log. Off on the run page, on in the activity view. */
+  showSteps?: boolean;
 }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -183,7 +186,7 @@ export function RunProgress({
             </div>
           )}
 
-          {stepLog.length > 0 ? (
+          {showSteps && stepLog.length > 0 ? (
             <ul className="mt-4 space-y-1.5">
               {stepLog.map((s, i) => {
                 const running = !s.ended_at;
