@@ -150,9 +150,28 @@ export const rerunResearch = createServerFn({ method: "POST" })
 
 
 
+/** Runs with no progress update for this long are considered dead. */
+const STALL_MS = 5 * 60 * 1000;
+
+async function failStalledRuns(supabase: {
+  from: (t: string) => any;
+}): Promise<void> {
+  const cutoff = new Date(Date.now() - STALL_MS).toISOString();
+  await supabase
+    .from("research_runs")
+    .update({
+      status: "failed",
+      error_message:
+        "Run stalled — no progress for over 5 minutes. The scrape or model call likely timed out. Use Re-run to try again.",
+    })
+    .not("status", "in", "(complete,failed)")
+    .lt("updated_at", cutoff);
+}
+
 export const listRuns = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
+    await failStalledRuns(context.supabase);
     const { data, error } = await context.supabase
       .from("research_runs")
       .select("id, input_url, status, stage, progress_message, created_at, completed_at, executive_summary")
