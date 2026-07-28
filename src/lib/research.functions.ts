@@ -97,11 +97,12 @@ export const getRun = createServerFn({ method: "GET" })
   .inputValidator((input: unknown) => z.object({ runId: z.string().uuid() }).parse(input))
   .handler(async ({ data, context }) => {
     const [{ data: run, error: runErr }, { data: events }, { data: leads }] = await Promise.all([
-      context.supabase.from("research_runs").select("*").eq("id", data.runId).single(),
+      context.supabase.from("research_runs").select("*").eq("id", data.runId).maybeSingle(),
       context.supabase.from("events").select("*").eq("run_id", data.runId).order("event_opportunity_score", { ascending: false }),
       context.supabase.from("leads").select("*").eq("run_id", data.runId).order("lead_score", { ascending: false }),
     ]);
     if (runErr) throw new Error(runErr.message);
+    if (!run) throw new Error("Run not found");
     return { run, events: events ?? [], leads: leads ?? [] };
   });
 
