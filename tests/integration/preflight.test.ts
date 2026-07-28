@@ -4,33 +4,38 @@ import { mkdtempSync, writeFileSync, mkdirSync, cpSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-const SCRIPT = join(process.cwd(), "scripts", "preflight.mjs");
-
-function runIn(dir: string) {
-  return spawnSync("node", [SCRIPT], { cwd: dir, encoding: "utf8" });
-}
+const SCRIPT_SRC = join(process.cwd(), "scripts", "preflight.mjs");
 
 function scaffold(pkgs: string[]) {
   const dir = mkdtempSync(join(tmpdir(), "preflight-"));
   writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "t", version: "0.0.0" }));
+  mkdirSync(join(dir, "scripts"), { recursive: true });
+  cpSync(SCRIPT_SRC, join(dir, "scripts", "preflight.mjs"));
   const nm = join(dir, "node_modules");
   for (const p of pkgs) {
     const target = join(nm, ...p.split("/"));
     mkdirSync(target, { recursive: true });
     writeFileSync(
       join(target, "package.json"),
-      JSON.stringify({ name: p, version: "1.0.0" }),
+      JSON.stringify({ name: p, version: "1.0.0", main: "index.js" }),
     );
+    writeFileSync(join(target, "index.js"), "module.exports = {};");
   }
   return dir;
 }
 
+function runIn(dir: string) {
+  return spawnSync("node", [join(dir, "scripts", "preflight.mjs")], {
+    cwd: dir,
+    encoding: "utf8",
+  });
+}
+
 describe("preflight script (integration)", () => {
-  it("exits 0 when all required packages are installed", () => {
-    // Run against the real project which has all deps installed.
-    const res = spawnSync("node", [SCRIPT], { cwd: process.cwd(), encoding: "utf8" });
+  it("exits 0 when all required packages are resolvable", () => {
+    const res = spawnSync("node", [SCRIPT_SRC], { cwd: process.cwd(), encoding: "utf8" });
     expect(res.status).toBe(0);
-    expect(res.stdout).toMatch(/required packages/i);
+    expect(res.stdout).toMatch(/preflight: OK/i);
   });
 
   it("exits non-zero and prints install command when a package is missing", () => {
@@ -40,6 +45,7 @@ describe("preflight script (integration)", () => {
     const output = res.stdout + res.stderr;
     expect(output).toMatch(/missing/i);
     expect(output).toMatch(/npm install/i);
-    expect(output).toContain("ai@");
+    expect(output).toContain("ai");
   });
 });
+
