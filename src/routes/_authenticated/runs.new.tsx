@@ -23,6 +23,7 @@ function NewRun() {
     targetMarket: "United States",
     minProjectValue: 25000,
     maxLeadsPerShow: 10,
+    minLeadTimeDays: 45,
     priorityIndustries: "technology, manufacturing, medical, automotive",
     targetServices: DEFAULT_SERVICES.join(", "),
   });
@@ -38,6 +39,7 @@ function NewRun() {
           targetMarket: form.targetMarket || null,
           minProjectValue: form.minProjectValue,
           maxLeadsPerShow: form.maxLeadsPerShow,
+          minLeadTimeDays: form.minLeadTimeDays,
           priorityIndustries: form.priorityIndustries.split(",").map((s) => s.trim()).filter(Boolean),
           targetServices: form.targetServices.split(",").map((s) => s.trim()).filter(Boolean),
         },
@@ -108,6 +110,16 @@ function NewRun() {
               max={30}
               value={form.maxLeadsPerShow}
               onChange={(e) => setForm({ ...form, maxLeadsPerShow: parseInt(e.target.value || "10") })}
+              className="w-full rounded-md border border-border bg-input px-3 py-2 text-sm font-mono"
+            />
+          </Field>
+          <Field label="Min days until show" hint="Shows starting sooner (or already past) are skipped.">
+            <input
+              type="number"
+              min={0}
+              max={365}
+              value={form.minLeadTimeDays}
+              onChange={(e) => setForm({ ...form, minLeadTimeDays: parseInt(e.target.value || "0") })}
               className="w-full rounded-md border border-border bg-input px-3 py-2 text-sm font-mono"
             />
           </Field>
