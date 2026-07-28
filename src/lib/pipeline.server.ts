@@ -271,11 +271,47 @@ function findPaginationUrls(baseUrl: string, links: string[], maxPages: number):
     }
   }
 
-  return Array.from(found.entries())
+  const numbered = Array.from(found.entries())
     .sort((a, b) => a[0] - b[0])
     .slice(0, maxPages)
     .map(([, url]) => url);
+  if (numbered.length > 0) return numbered;
+
+  // Fallback: offset-style feeds (?vPos=0&vRpP=100, ?offset=, ?start=…), which many
+  // embedded directory widgets use — often on a different host than the host page.
+  return findOffsetPaginationUrls(links, maxPages);
 }
+
+const OFFSET_PARAMS = ["vPos", "offset", "start", "skip", "from", "firstResult"];
+const PER_PAGE_PARAMS = ["vRpP", "rpp", "limit", "per_page", "perPage", "pageSize", "count"];
+
+function findOffsetPaginationUrls(links: string[], maxPages: number): string[] {
+  for (const raw of links) {
+    let u: URL;
+    try {
+      u = new URL(raw);
+    } catch {
+      continue;
+    }
+    const offsetKey = OFFSET_PARAMS.find((k) => u.searchParams.get(k) !== null);
+    if (!offsetKey) continue;
+    const perKey = PER_PAGE_PARAMS.find((k) => Number(u.searchParams.get(k)) > 0);
+    const step = perKey ? Number(u.searchParams.get(perKey)) : 100;
+    if (!Number.isFinite(step) || step <= 0) continue;
+    const startOffset = Number(u.searchParams.get(offsetKey)) || 0;
+
+    const urls: string[] = [];
+    for (let i = 1; i <= maxPages; i++) {
+      const next = new URL(u.toString());
+      next.searchParams.set(offsetKey, String(startOffset + i * step));
+      next.hash = "";
+      urls.push(next.toString());
+    }
+    return urls;
+  }
+  return [];
+}
+
 
 
 function fmtElapsed(ms: number): string {
