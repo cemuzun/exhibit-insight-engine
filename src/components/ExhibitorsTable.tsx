@@ -37,6 +37,11 @@ function directorySource(urls: string[]) {
     .sort((a, b) => b.s - a.s);
   return scored[0].u;
 }
+function csvCell(value: string) {
+  const v = value ?? "";
+  return /[",\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
+}
+
 
 export function ExhibitorsTable({ rows }: { rows: ExhibitorRow[] }) {
   const [query, setQuery] = useState("");
