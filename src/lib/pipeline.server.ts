@@ -185,7 +185,31 @@ function extractEventsFromMarkdownDirectory(
   return events;
 }
 
+const US_STATES = new Set(
+  ("alabama,alaska,arizona,arkansas,california,colorado,connecticut,delaware,florida,georgia,hawaii,idaho,illinois," +
+    "indiana,iowa,kansas,kentucky,louisiana,maine,maryland,massachusetts,michigan,minnesota,mississippi,missouri," +
+    "montana,nebraska,nevada,new hampshire,new jersey,new mexico,new york,north carolina,north dakota,ohio,oklahoma," +
+    "oregon,pennsylvania,rhode island,south carolina,south dakota,tennessee,texas,utah,vermont,virginia,washington," +
+    "west virginia,wisconsin,wyoming,district of columbia,washington dc,puerto rico," +
+    "al,ak,az,ar,ca,co,ct,de,fl,ga,hi,id,il,in,ia,ks,ky,la,me,md,ma,mi,mn,ms,mo,mt,ne,nv,nh,nj,nm,ny,nc,nd,oh,ok," +
+    "or,pa,ri,sc,sd,tn,tx,ut,vt,va,wa,wv,wi,wy,dc,pr").split(","),
+);
+
+const US_COUNTRY_RE = /^(usa|u\.?s\.?a?\.?|united states( of america)?|america)$/i;
+
+/** Keep only shows that take place in the United States. */
+export function isUsEvent(e: Pick<EventRecord, "country" | "state" | "city">): boolean {
+  const country = (e.country ?? "").trim();
+  if (country) return US_COUNTRY_RE.test(country);
+  const state = (e.state ?? "").trim().toLowerCase().replace(/\./g, "");
+  if (state) return US_STATES.has(state);
+  const city = (e.city ?? "").trim().toLowerCase();
+  if (!city) return false; // unknown location — not provably USA
+  return city.split(/[\s,]+/).some((part) => US_STATES.has(part));
+}
+
 function dedupeEvents(events: EventRecord[]): EventRecord[] {
+
   const seen = new Map<string, EventRecord>();
   for (const e of events) {
     const key = `${e.event_name.toLowerCase().trim()}|${(e.official_url ?? "").toLowerCase().trim()}`;
@@ -1361,6 +1385,23 @@ ${sourceLinks.slice(0, 80).join("\n")}`,
       return;
     }
   }
+
+  // USA-only: drop any show whose location is outside the United States (or unprovable).
+  {
+    const beforeGeo = eventList.events.length;
+    const usEvents = eventList.events.filter(isUsEvent);
+    if (usEvents.length > 0 && usEvents.length < beforeGeo) {
+      limitations.push(
+        `Filtered out ${beforeGeo - usEvents.length} non-USA show(s); ${usEvents.length} US show(s) kept.`,
+      );
+      eventList = { ...eventList, events: usEvents };
+    } else if (usEvents.length > 0) {
+      eventList = { ...eventList, events: usEvents };
+    } else {
+      limitations.push("No US-based shows found in the source; keeping all shows so the run can continue.");
+    }
+  }
+
 
   // Drop shows that are already over or too close to sell into (booth design,
   // fabrication and shipping need lead time).
