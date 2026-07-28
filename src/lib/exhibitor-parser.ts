@@ -78,7 +78,8 @@ export function parseExhibitorsFromPlainList(markdown: string, max = 500): Exhib
       !!prev &&
       prev.length > 3 &&
       line.length < 60 &&
-      /^(inc\.?|llc|ltd\.?|corp\.?|co\.|gmbh|s\.a\.?|b\.v\.?|ag|plc|\(|and\b|&|[a-z])/i.test(line);
+      (/^(inc\.?|llc|ltd\.?|corp\.?|co\.|gmbh|s\.a\.?|b\.v\.?|ag|plc|and)\b/i.test(line) ||
+        /^[a-z(&]/.test(line));
     if (isContinuation) lines[lines.length - 1] = `${prev} ${line}`;
     else lines.push(line);
   }
