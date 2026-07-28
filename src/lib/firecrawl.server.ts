@@ -69,7 +69,16 @@ type ScrapeResult = {
   metadata?: { title?: string; description?: string; sourceURL?: string; statusCode?: number };
   /** true when the page came from the cache instead of a fresh fetch */
   fromCache?: boolean;
+  /** true when a free direct fetch served the page (no Firecrawl credit spent) */
+  free?: boolean;
 };
+
+/** Counters so the UI can show how much of the crawl stayed free. */
+export const fetchStats = { direct: 0, firecrawl: 0 };
+
+function cheapModeEnabled() {
+  return process.env.SCRAPE_MODE !== "firecrawl_only";
+}
 
 export async function firecrawlScrape(
   url: string,
@@ -80,6 +89,8 @@ export async function firecrawlScrape(
     /** e.g. ["pdf"] so Firecrawl converts a linked PDF into markdown. */
     parsers?: string[];
     cache?: CacheOptions;
+    /** skip the free direct fetch (JS-rendered page, PDF, etc.) */
+    forceFirecrawl?: boolean;
   },
 ): Promise<ScrapeResult> {
   const payload = {
@@ -89,10 +100,36 @@ export async function firecrawlScrape(
     waitFor: opts?.waitFor,
     parsers: opts?.parsers,
   };
+
+  const canTryFree =
+    cheapModeEnabled() &&
+    !opts?.forceFirecrawl &&
+    !opts?.waitFor &&
+    !opts?.parsers?.length &&
+    !/\.pdf(\?|$)/i.test(url);
+
+  const produce = async (): Promise<({ data?: ScrapeResult } & ScrapeResult) | null> => {
+    if (canTryFree) {
+      const direct = await directFetch(url);
+      if (direct.ok) {
+        fetchStats.direct += 1;
+        return {
+          markdown: direct.markdown,
+          html: direct.html,
+          links: direct.links,
+          metadata: { title: direct.title, sourceURL: url, statusCode: direct.status },
+          free: true,
+        };
+      }
+    }
+    fetchStats.firecrawl += 1;
+    return firecrawlPost<({ data?: ScrapeResult } & ScrapeResult) | null>("/scrape", payload, "scrape");
+  };
+
   const { value: body, cached } = await withCache<({ data?: ScrapeResult } & ScrapeResult) | null>(
     "scrape",
     payload,
-    () => firecrawlPost<({ data?: ScrapeResult } & ScrapeResult) | null>("/scrape", payload, "scrape"),
+    produce,
     opts?.cache ?? {},
   );
   const b = body ?? {};
@@ -102,9 +139,11 @@ export async function firecrawlScrape(
     html: b.html ?? b.data?.html,
     links: b.links ?? b.data?.links,
     metadata: b.metadata ?? b.data?.metadata,
+    free: b.free,
     fromCache: cached,
   };
 }
+
 
 /**
  * Fast URL discovery for a site. Surfaces deep pages (and PDFs) that are never
