@@ -37,6 +37,11 @@ function directorySource(urls: string[]) {
     .sort((a, b) => b.s - a.s);
   return scored[0].u;
 }
+function csvCell(value: string) {
+  const v = value ?? "";
+  return /[",\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
+}
+
 
 export function ExhibitorsTable({ rows }: { rows: ExhibitorRow[] }) {
   const [query, setQuery] = useState("");
@@ -74,6 +79,52 @@ export function ExhibitorsTable({ rows }: { rows: ExhibitorRow[] }) {
   const totalShown = groups.reduce((n, g) => n + g.list.length, 0);
   const totalBooths = groups.reduce((n, g) => n + g.withBooth, 0);
 
+  function exportCsv() {
+    const header = [
+      "company_name",
+      "booth_number",
+      "show_name",
+      "event_date",
+      "booth_type",
+      "booth_size_estimate",
+      "company_website",
+      "confidence_level",
+      "lead_score",
+      "source_url",
+      "all_source_urls",
+    ];
+    const lines = [header.join(",")];
+    for (const g of groups) {
+      for (const r of g.list) {
+        lines.push(
+          [
+            r.company_name,
+            r.booth_number ?? "",
+            g.show,
+            r.event_date ?? "",
+            r.booth_type ?? "",
+            r.booth_size_estimate ?? "",
+            r.company_website ?? "",
+            r.confidence_level ?? "",
+            String(r.lead_score ?? 0),
+            directorySource(r.source_urls ?? []) ?? "",
+            (r.source_urls ?? []).join(" | "),
+          ]
+            .map(csvCell)
+            .join(","),
+        );
+      }
+    }
+    const blob = new Blob(["\uFEFF" + lines.join("\r\n")], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `exhibitors-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+
   return (
     <section className="rounded-lg border border-border bg-card">
       <div className="flex flex-wrap items-center gap-3 border-b border-border p-4">
@@ -87,12 +138,21 @@ export function ExhibitorsTable({ rows }: { rows: ExhibitorRow[] }) {
           <input type="checkbox" checked={onlyBooth} onChange={(e) => setOnlyBooth(e.target.checked)} />
           Only with booth number
         </label>
+        <button
+          type="button"
+          onClick={exportCsv}
+          disabled={totalShown === 0}
+          className="rounded-md border border-border px-3 py-1.5 text-xs hover:bg-muted/40 disabled:opacity-50"
+        >
+          Export CSV
+        </button>
         <div className="ml-auto text-xs text-muted-foreground">
           <span className="font-mono text-foreground">{totalShown}</span> exhibitors ·{" "}
           <span className="font-mono text-foreground">{totalBooths}</span> with booth ·{" "}
           <span className="font-mono text-foreground">{groups.length}</span> shows
         </div>
       </div>
+
 
       {groups.length === 0 ? (
         <p className="p-8 text-center text-sm text-muted-foreground">No exhibitors extracted yet.</p>
