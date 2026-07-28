@@ -11,6 +11,7 @@ const CreateInput = z.object({
   maxEvents: z.number().int().min(1).max(2000).default(500),
   maxDirectoryPages: z.number().int().min(1).max(50).default(25),
   maxDeepDiveShows: z.number().int().min(1).max(25).default(4),
+  minLeadTimeDays: z.number().int().min(0).max(365).default(45),
   priorityIndustries: z.array(z.string().max(100)).max(20).default([]),
   targetServices: z.array(z.string().max(100)).max(20).default([]),
 });
@@ -32,6 +33,7 @@ export const createResearchRun = createServerFn({ method: "POST" })
           maxEvents: data.maxEvents,
           maxDirectoryPages: data.maxDirectoryPages,
           maxDeepDiveShows: data.maxDeepDiveShows,
+          minLeadTimeDays: data.minLeadTimeDays,
           priorityIndustries: data.priorityIndustries,
           targetServices: data.targetServices,
         },
@@ -73,6 +75,7 @@ export const runResearch = createServerFn({ method: "POST" })
             maxEvents?: number;
             maxDirectoryPages?: number;
             maxDeepDiveShows?: number;
+            minLeadTimeDays?: number;
             priorityIndustries?: string[];
             targetServices?: string[];
           },
@@ -138,6 +141,7 @@ export const rerunResearch = createServerFn({ method: "POST" })
             maxEvents?: number;
             maxDirectoryPages?: number;
             maxDeepDiveShows?: number;
+            minLeadTimeDays?: number;
             priorityIndustries?: string[];
             targetServices?: string[];
           },
