@@ -85,9 +85,12 @@ for (const m of missing) {
   console.error(`  ${pad(m.name, nameWidth)}  ${m.expected ?? "(not in package.json — add it)"}`);
 }
 console.error("\nInstall the missing packages with:");
+console.error("  ./scripts/install-required.sh   # installs all required packages, pinned");
+console.error("\nOr run the package-manager command directly:");
 const primary = commands[packageManager];
 const primaryNote = packageManager !== "npm" ? "  # recommended" : "";
 console.error(`  ${primary}${primaryNote}`);
+
 if (packageManager !== "npm") console.error(`  # or: npm install ${installArgs}`);
 process.exit(1);
 
