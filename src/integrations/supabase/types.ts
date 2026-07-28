@@ -172,6 +172,33 @@ export type Database = {
           },
         ]
       }
+      firecrawl_cache: {
+        Row: {
+          cache_key: string
+          created_at: string
+          expires_at: string
+          kind: string
+          request: Json
+          response: Json
+        }
+        Insert: {
+          cache_key: string
+          created_at?: string
+          expires_at: string
+          kind: string
+          request: Json
+          response: Json
+        }
+        Update: {
+          cache_key?: string
+          created_at?: string
+          expires_at?: string
+          kind?: string
+          request?: Json
+          response?: Json
+        }
+        Relationships: []
+      }
       leads: {
         Row: {
           booth_analysis_confidence: number | null
