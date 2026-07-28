@@ -1,4 +1,5 @@
 import { firecrawlLimiter, guarded, RateLimitError } from "./rate-limit.server";
+import { withCache } from "./firecrawl-cache.server";
 
 const FIRECRAWL_V2 = "https://api.firecrawl.dev/v2";
 
@@ -52,15 +53,16 @@ export async function firecrawlScrape(
   url: string,
   opts?: { formats?: string[]; onlyMainContent?: boolean; waitFor?: number },
 ): Promise<ScrapeResult> {
-  const body = await firecrawlPost<({ data?: ScrapeResult } & ScrapeResult) | null>(
-    "/scrape",
-    {
-      url,
-      formats: opts?.formats ?? ["markdown", "links"],
-      onlyMainContent: opts?.onlyMainContent ?? true,
-      waitFor: opts?.waitFor,
-    },
+  const payload = {
+    url,
+    formats: opts?.formats ?? ["markdown", "links"],
+    onlyMainContent: opts?.onlyMainContent ?? true,
+    waitFor: opts?.waitFor,
+  };
+  const { value: body } = await withCache<({ data?: ScrapeResult } & ScrapeResult) | null>(
     "scrape",
+    payload,
+    () => firecrawlPost<({ data?: ScrapeResult } & ScrapeResult) | null>("/scrape", payload, "scrape"),
   );
   const b = body ?? {};
   // v2 sometimes nests under data
@@ -76,14 +78,15 @@ export async function firecrawlSearch(
   query: string,
   opts?: { limit?: number; scrapeMarkdown?: boolean },
 ): Promise<Array<{ url: string; title?: string; description?: string; markdown?: string }>> {
-  const body = await firecrawlPost<{ data?: unknown; web?: unknown } | null>(
-    "/search",
-    {
-      query,
-      limit: opts?.limit ?? 5,
-      scrapeOptions: opts?.scrapeMarkdown ? { formats: ["markdown"] } : undefined,
-    },
+  const payload = {
+    query,
+    limit: opts?.limit ?? 5,
+    scrapeOptions: opts?.scrapeMarkdown ? { formats: ["markdown"] } : undefined,
+  };
+  const { value: body } = await withCache<{ data?: unknown; web?: unknown } | null>(
     "search",
+    payload,
+    () => firecrawlPost<{ data?: unknown; web?: unknown } | null>("/search", payload, "search"),
   );
   const b = body ?? {};
   const arr = (Array.isArray(b.data) ? b.data : Array.isArray(b.web) ? b.web : []) as Array<{
