@@ -4,6 +4,8 @@ import { useQuery } from "@tanstack/react-query";
 import { useState, useMemo } from "react";
 import { getRun } from "@/lib/research.functions";
 import { syncRunToCrm } from "@/lib/crm.functions";
+import { CrmSyncPreview } from "@/components/CrmSyncPreview";
+
 import { listEmailTemplates } from "@/lib/templates.functions";
 import { renderForLead, type EmailTemplate } from "@/lib/email-template-engine";
 import { toast } from "sonner";
@@ -110,7 +112,9 @@ function RunDetail() {
         </div>
         {!inProgress && (
           <div className="flex items-center gap-3">
+            <CrmSyncPreview runId={runId} disabled={typedLeads.length === 0} />
             <CrmSyncButton runId={runId} disabled={typedLeads.length === 0} />
+
             <div className="flex rounded-md border border-border bg-card p-1 text-xs">
               <button onClick={() => setMode("dashboard")} className={`rounded px-3 py-1.5 ${mode === "dashboard" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}>Dashboard</button>
               <button onClick={() => setMode("report")} className={`rounded px-3 py-1.5 ${mode === "report" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}>Report</button>

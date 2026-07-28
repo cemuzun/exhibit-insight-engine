@@ -51,6 +51,10 @@ export const syncRunToCrm = createServerFn({ method: "POST" })
     let skipped = 0;
     let failed = 0;
 
+    // In-run dedupe caches so the same domain/email is only pushed once.
+    const domainCache = new Map<string, string>();
+    const emailCache = new Map<string, string>();
+
     for (const lead of qualified) {
       try {
         const domain = domainFromUrl(lead.company_website);
@@ -64,7 +68,7 @@ export const syncRunToCrm = createServerFn({ method: "POST" })
           continue;
         }
 
-        let companyId = await findCompanyByDomain(domain);
+        let companyId = domainCache.get(domain) ?? (await findCompanyByDomain(domain));
         let companyExisted = true;
         if (!companyId) {
           companyExisted = false;
@@ -77,6 +81,7 @@ export const syncRunToCrm = createServerFn({ method: "POST" })
           companyId = await createCompany(props);
           companiesCreated++;
         }
+        domainCache.set(domain, companyId);
 
         const dms = (lead.decision_makers ?? []) as DecisionMaker[];
         const contactIds: string[] = [];
@@ -85,12 +90,14 @@ export const syncRunToCrm = createServerFn({ method: "POST" })
           // Verified fields only: needs a valid, evidence-backed business email.
           if (!isValidEmail(email) || !isVerified(dm.evidence_status)) continue;
 
-          const existing = await findContactByEmail(email);
+          const existing = emailCache.get(email) ?? (await findContactByEmail(email));
           if (existing) {
             skipped++;
+            emailCache.set(email, existing);
             contactIds.push(existing);
             continue;
           }
+
           const props: Record<string, string> = { email };
           if (dm.name) {
             const parts = dm.name.trim().split(/\s+/);
@@ -103,8 +110,10 @@ export const syncRunToCrm = createServerFn({ method: "POST" })
 
           const contactId = await createContact(props);
           contactsCreated++;
+          emailCache.set(email, contactId);
           contactIds.push(contactId);
           await associateContactToCompany(contactId, companyId);
+
         }
 
         if (companyExisted && contactIds.length === 0) skipped++;
@@ -135,5 +144,144 @@ export const syncRunToCrm = createServerFn({ method: "POST" })
       contactsCreated,
       skipped,
       failed,
+    };
+  });
+
+const PreviewInput = z.object({
+  runId: z.string().uuid(),
+  minScore: z.number().int().min(0).max(100).default(50),
+});
+
+export type CrmPreviewCompany = {
+  leadId: string;
+  companyName: string;
+  domain: string | null;
+  action: "insert" | "skip";
+  reason: string;
+  contacts: Array<{
+    name: string | null;
+    email: string | null;
+    action: "insert" | "skip";
+    reason: string;
+  }>;
+};
+
+/** Read-only dry run: performs dedupe lookups in HubSpot but writes nothing. */
+export const previewCrmSync = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) => PreviewInput.parse(input))
+  .handler(async ({ data, context }) => {
+    const { domainFromUrl, isValidEmail, findCompanyByDomain, findContactByEmail } =
+      await import("./hubspot.server");
+
+    const { data: leads, error } = await context.supabase
+      .from("leads")
+      .select("*")
+      .eq("run_id", data.runId);
+    if (error) throw new Error(error.message);
+
+    const qualified = (leads ?? []).filter((l) => (l.lead_score ?? 0) >= data.minScore);
+
+    const domainCache = new Map<string, string | null>();
+    const emailCache = new Map<string, string | null>();
+    const seenDomains = new Set<string>();
+    const seenEmails = new Set<string>();
+
+    const rows: CrmPreviewCompany[] = [];
+
+    for (const lead of qualified) {
+      const domain = domainFromUrl(lead.company_website);
+      const row: CrmPreviewCompany = {
+        leadId: lead.id,
+        companyName: lead.company_name,
+        domain,
+        action: "skip",
+        reason: "",
+        contacts: [],
+      };
+
+      if (!domain) {
+        row.reason = "No verified company domain — cannot dedupe";
+      } else if (seenDomains.has(domain)) {
+        row.reason = `Duplicate domain within this run (${domain})`;
+      } else {
+        if (!domainCache.has(domain)) domainCache.set(domain, await findCompanyByDomain(domain));
+        const existing = domainCache.get(domain);
+        if (existing) {
+          row.reason = `Company already in CRM for ${domain}`;
+        } else {
+          row.action = "insert";
+          row.reason = `New company (${domain})`;
+        }
+        seenDomains.add(domain);
+      }
+
+      const dms = (lead.decision_makers ?? []) as DecisionMaker[];
+      for (const dm of dms) {
+        const email = dm.public_business_email?.trim().toLowerCase() ?? null;
+        if (!isValidEmail(email)) {
+          row.contacts.push({
+            name: dm.name ?? null,
+            email,
+            action: "skip",
+            reason: "No valid business email",
+          });
+          continue;
+        }
+        if (!isVerified(dm.evidence_status)) {
+          row.contacts.push({
+            name: dm.name ?? null,
+            email,
+            action: "skip",
+            reason: "Contact not evidence-verified",
+          });
+          continue;
+        }
+        if (seenEmails.has(email)) {
+          row.contacts.push({
+            name: dm.name ?? null,
+            email,
+            action: "skip",
+            reason: "Duplicate email within this run",
+          });
+          continue;
+        }
+        seenEmails.add(email);
+        if (!emailCache.has(email)) emailCache.set(email, await findContactByEmail(email));
+        if (emailCache.get(email)) {
+          row.contacts.push({
+            name: dm.name ?? null,
+            email,
+            action: "skip",
+            reason: "Contact already in CRM",
+          });
+        } else {
+          row.contacts.push({
+            name: dm.name ?? null,
+            email,
+            action: "insert",
+            reason: "New contact",
+          });
+        }
+      }
+
+      rows.push(row);
+    }
+
+    return {
+      rows,
+      totals: {
+        leadsConsidered: qualified.length,
+        companiesToInsert: rows.filter((r) => r.action === "insert").length,
+        companiesSkipped: rows.filter((r) => r.action === "skip").length,
+        contactsToInsert: rows.reduce(
+          (n, r) => n + r.contacts.filter((c) => c.action === "insert").length,
+          0,
+        ),
+        contactsSkipped: rows.reduce(
+          (n, r) => n + r.contacts.filter((c) => c.action === "skip").length,
+          0,
+        ),
+      },
     };
   });
