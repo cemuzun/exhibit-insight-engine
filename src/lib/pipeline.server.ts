@@ -164,6 +164,77 @@ function dedupeEvents(events: EventRecord[]): EventRecord[] {
   return Array.from(seen.values());
 }
 
+type LeadEntry = {
+  lead: import("zod").infer<typeof LeadSchema>;
+  eventId: string;
+  eventName: string;
+  eventDate: string | null;
+  boothNumber: string | null;
+};
+
+/** Deterministic scoring + tiering for one enriched exhibitor. */
+function buildLeadRow(runId: string, inputUrl: string, entry: LeadEntry) {
+  const { lead, eventId, eventName, eventDate, boothNumber } = entry;
+  const b = lead.score_breakdown;
+  const total = Math.min(
+    100,
+    b.trade_show_activity +
+      b.booth_scale_complexity +
+      b.led_digital_fit +
+      b.buying_capacity +
+      b.timing +
+      b.decision_maker_availability +
+      b.growth_trigger_signals +
+      b.service_fit +
+      b.vendor_opportunity,
+  );
+
+  // Tier 1 requires a credible decision-maker path
+  const decisionMakers = lead.decision_makers ?? [];
+  const hasVerified = decisionMakers.some(
+    (dm) => (dm.contact_confidence ?? 0) >= 70 && dm.evidence_status === "CONFIRMED",
+  );
+  let tier: string;
+  if (total >= 80 && hasVerified) tier = "TIER_1_IMMEDIATE";
+  else if (total >= 65) tier = "TIER_2_HIGH_PRIORITY";
+  else if (total >= 50) tier = "TIER_3_NURTURE";
+  else tier = "TIER_4_LOW_PRIORITY";
+
+  return {
+    run_id: runId,
+    event_id: eventId,
+    company_name: lead.company_name,
+    normalized_company_name: lead.normalized_company_name ?? lead.company_name,
+    parent_company: lead.parent_company ?? null,
+    company_website: lead.company_website ?? null,
+    industry: lead.industry ?? null,
+    employee_range: lead.employee_range ?? null,
+    revenue_range: lead.revenue_range ?? null,
+    trade_show: eventName,
+    event_date: eventDate,
+    booth_number: boothNumber,
+    booth_type: lead.booth_type ?? null,
+    booth_size_estimate: lead.booth_size_estimate ?? null,
+    booth_analysis_confidence: Math.max(0, Math.min(100, Math.round(lead.booth_analysis_confidence ?? 0))),
+    recommended_services: lead.recommended_services ?? [],
+    estimated_project_value_low: Math.round(lead.estimated_project_value_low ?? 0),
+    estimated_project_value_high: Math.round(lead.estimated_project_value_high ?? 0),
+    lead_score: total,
+    priority_tier: tier,
+    score_breakdown: b,
+    decision_makers: decisionMakers,
+    recommended_outreach_date: lead.recommended_outreach_date ?? null,
+    recommended_next_action: lead.recommended_next_action ?? null,
+    personalized_email: `Subject: ${lead.personalized_email_subject ?? ""}\n\n${lead.personalized_email_body ?? ""}`,
+    linkedin_message: lead.linkedin_message ?? null,
+    confidence_level: lead.confidence_level ?? "LOW",
+    unknown_fields: lead.unknown_fields ?? [],
+    source_urls: [inputUrl],
+    raw: lead,
+  };
+}
+
+
 const MONTHS: Record<string, number> = {
   jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
   jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11,
@@ -872,13 +943,21 @@ TASK:
         const output = await withHeartbeat("enrich_leads", `[${ev.event_name}] Scoring ${ex.company_name}`, () =>
           generateStructured(reasonModel, LeadSchema, leadPrompt),
         );
-        allLeads.push({
+        const entry = {
           lead: output,
           eventId: ev.id,
           eventName: ev.event_name,
           eventDate: ev.start_date ?? null,
           boothNumber: ex.booth_number ?? null,
-        });
+        };
+        allLeads.push(entry);
+        // Stream the lead into the database immediately so the UI can show it live.
+        try {
+          await admin.from("leads").insert(buildLeadRow(runId, input.inputUrl, entry));
+        } catch {
+          // non-fatal; the row is still counted in the summary
+        }
+
       } catch (e) {
         limitations.push(`Could not analyze ${ex.company_name}: ${(e as Error).message}`);
       }
@@ -894,70 +973,11 @@ TASK:
 
   }
 
-  // Deterministic scoring + tiering
-  const leadRows = allLeads.map(({ lead, eventId, eventName, eventDate, boothNumber }) => {
-    const b = lead.score_breakdown;
-    const total = Math.min(
-      100,
-      b.trade_show_activity +
-        b.booth_scale_complexity +
-        b.led_digital_fit +
-        b.buying_capacity +
-        b.timing +
-        b.decision_maker_availability +
-        b.growth_trigger_signals +
-        b.service_fit +
-        b.vendor_opportunity,
-    );
+  // Deterministic scoring + tiering (rows were already streamed in as they were produced)
+  const leadRows = allLeads.map(({ lead, eventId, eventName, eventDate, boothNumber }) =>
+    buildLeadRow(runId, input.inputUrl, { lead, eventId, eventName, eventDate, boothNumber }),
+  );
 
-    // Tier 1 requires a credible decision-maker path
-    const decisionMakers = lead.decision_makers ?? [];
-    const hasVerified = decisionMakers.some(
-      (dm) => (dm.contact_confidence ?? 0) >= 70 && dm.evidence_status === "CONFIRMED",
-    );
-    let tier: string;
-    if (total >= 80 && hasVerified) tier = "TIER_1_IMMEDIATE";
-    else if (total >= 65) tier = "TIER_2_HIGH_PRIORITY";
-    else if (total >= 50) tier = "TIER_3_NURTURE";
-    else tier = "TIER_4_LOW_PRIORITY";
-
-    return {
-      run_id: runId,
-      event_id: eventId,
-      company_name: lead.company_name,
-      normalized_company_name: lead.normalized_company_name ?? lead.company_name,
-      parent_company: lead.parent_company ?? null,
-      company_website: lead.company_website ?? null,
-      industry: lead.industry ?? null,
-      employee_range: lead.employee_range ?? null,
-      revenue_range: lead.revenue_range ?? null,
-      trade_show: eventName,
-      event_date: eventDate,
-      booth_number: boothNumber,
-      booth_type: lead.booth_type ?? null,
-      booth_size_estimate: lead.booth_size_estimate ?? null,
-      booth_analysis_confidence: Math.max(0, Math.min(100, Math.round(lead.booth_analysis_confidence ?? 0))),
-      recommended_services: lead.recommended_services ?? [],
-      estimated_project_value_low: Math.round(lead.estimated_project_value_low ?? 0),
-      estimated_project_value_high: Math.round(lead.estimated_project_value_high ?? 0),
-      lead_score: total,
-      priority_tier: tier,
-      score_breakdown: b,
-      decision_makers: decisionMakers,
-      recommended_outreach_date: lead.recommended_outreach_date ?? null,
-      recommended_next_action: lead.recommended_next_action ?? null,
-      personalized_email: `Subject: ${lead.personalized_email_subject ?? ""}\n\n${lead.personalized_email_body ?? ""}`,
-      linkedin_message: lead.linkedin_message ?? null,
-      confidence_level: lead.confidence_level ?? "LOW",
-      unknown_fields: lead.unknown_fields ?? [],
-      source_urls: [input.inputUrl],
-      raw: lead,
-    };
-  });
-
-  if (leadRows.length > 0) {
-    await admin.from("leads").insert(leadRows);
-  }
 
   await progress("summarize", "Generating executive summary");
 

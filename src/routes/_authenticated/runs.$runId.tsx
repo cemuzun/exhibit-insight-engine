@@ -84,22 +84,32 @@ function RunDetail() {
     },
   });
 
-  // Live push updates for step-by-step progress.
+  // Live push updates for step-by-step progress and for results as they land.
   useEffect(() => {
+    const invalidate = () => queryClient.invalidateQueries({ queryKey: ["run", runId] });
     const channel = supabase
       .channel(`run-${runId}`)
       .on(
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "research_runs", filter: `id=eq.${runId}` },
-        () => {
-          queryClient.invalidateQueries({ queryKey: ["run", runId] });
-        },
+        invalidate,
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "events", filter: `run_id=eq.${runId}` },
+        invalidate,
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "leads", filter: `run_id=eq.${runId}` },
+        invalidate,
       )
       .subscribe();
     return () => {
       supabase.removeChannel(channel);
     };
   }, [runId, queryClient]);
+
 
 
   if (isLoading || !data) return <main className="mx-auto max-w-7xl px-6 py-8"><p className="text-sm text-muted-foreground">Loading…</p></main>;
@@ -166,6 +176,20 @@ function RunDetail() {
           stepLog={((run as { step_log?: unknown }).step_log ?? []) as StepEntry[]}
         />
       )}
+
+      {inProgress && (
+        <div className="mb-6 flex items-center gap-2 rounded-md border border-border bg-card px-4 py-2 text-xs text-muted-foreground">
+          <span className="relative flex h-2 w-2">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
+            <span className="relative inline-flex h-2 w-2 rounded-full bg-primary" />
+          </span>
+          Live — results appear below as they're found:{" "}
+          <span className="font-mono text-foreground">{events.length}</span> shows,{" "}
+          <span className="font-mono text-foreground">{typedLeads.length}</span> leads so far
+        </div>
+      )}
+
+
 
       {!inProgress && (((run as { step_log?: unknown[] }).step_log ?? []) as StepEntry[]).length > 0 && (
         <RunTimings stepLog={((run as { step_log?: unknown }).step_log ?? []) as StepEntry[]} />
