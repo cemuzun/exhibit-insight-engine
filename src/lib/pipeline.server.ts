@@ -219,10 +219,12 @@ ${sourceLinks.slice(0, 80).join("\n")}`;
     } else {
       limitations.push(`Event extraction failed: ${(e as Error).message}`);
     }
+    await finishSteps();
     await admin.from("research_runs").update({
       status: "failed",
       error_message: (e as Error).message,
       limitations,
+      step_log: stepLog,
     }).eq("id", runId);
     return;
   }
