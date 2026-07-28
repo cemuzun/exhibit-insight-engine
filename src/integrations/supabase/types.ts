@@ -408,6 +408,7 @@ export type Database = {
       research_runs: {
         Row: {
           completed_at: string | null
+          counters: Json
           created_at: string
           error_message: string | null
           executive_summary: Json | null
@@ -426,6 +427,7 @@ export type Database = {
         }
         Insert: {
           completed_at?: string | null
+          counters?: Json
           created_at?: string
           error_message?: string | null
           executive_summary?: Json | null
@@ -444,6 +446,7 @@ export type Database = {
         }
         Update: {
           completed_at?: string | null
+          counters?: Json
           created_at?: string
           error_message?: string | null
           executive_summary?: Json | null

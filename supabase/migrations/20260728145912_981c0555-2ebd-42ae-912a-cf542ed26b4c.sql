@@ -1,0 +1,1 @@
+ALTER TABLE public.research_runs ADD COLUMN IF NOT EXISTS counters jsonb NOT NULL DEFAULT '{}'::jsonb;

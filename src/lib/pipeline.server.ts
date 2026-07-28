@@ -579,6 +579,23 @@ export async function runPipeline(
       .eq("id", runId);
   };
 
+  // Live counters surfaced in the run UI while the pipeline is working.
+  const counters = {
+    discovered: 0,
+    filtered_too_soon: 0,
+    eligible: 0,
+    kept: 0,
+    deep_dive_total: 0,
+    deep_dive_done: 0,
+    exhibitors_found: 0,
+    leads_scored: 0,
+  };
+  const bumpCounters = async (patch: Partial<typeof counters>) => {
+    Object.assign(counters, patch);
+    await admin.from("research_runs").update({ counters }).eq("id", runId);
+  };
+
+
   const finishSteps = async () => {
     const last = stepLog[stepLog.length - 1];
     if (last && !last.ended_at) {
@@ -764,6 +781,14 @@ ${sourceLinks.slice(0, 80).join("\n")}`,
   const tooSoon = dated.filter((d) => d.leadDays !== null && d.leadDays < minLeadDays);
   const eligible = dated.filter((d) => d.leadDays === null || d.leadDays >= minLeadDays).map((d) => d.event);
 
+  await bumpCounters({
+    discovered: eventList.events.length,
+    filtered_too_soon: tooSoon.length,
+    eligible: eligible.length,
+  });
+
+
+
   if (tooSoon.length > 0) {
     limitations.push(
       `Skipped ${tooSoon.length} show(s) starting in under ${minLeadDays} days (or already past): ${tooSoon
@@ -835,11 +860,13 @@ ${sourceLinks.slice(0, 80).join("\n")}`,
     );
   }
 
+  await bumpCounters({ kept: eventsInDb.length, deep_dive_total: topEvents.length });
 
   const allLeads: Array<{ lead: LeadRecord; eventId: string; eventName: string; eventDate: string | null; boothNumber: string | null }> = [];
 
   for (const ev of topEvents) {
     await progress("extract_exhibitors", `Extracting exhibitors from ${ev.event_name}`);
+
 
     let exhibitorSource = sourceMarkdown;
     let exhibitorSourceUrl = input.inputUrl;
@@ -889,8 +916,10 @@ ${exhibitorSource.slice(0, 30000)}`;
     }
 
     const exhibitors = exhibitorList.exhibitors.slice(0, maxLeads);
+    await bumpCounters({ exhibitors_found: counters.exhibitors_found + exhibitors.length });
 
     let completed = 0;
+
 
     await mapPool(exhibitors, concurrency, async (ex) => {
       // Firecrawl search for enrichment context
@@ -957,6 +986,7 @@ TASK:
         } catch {
           // non-fatal; the row is still counted in the summary
         }
+        await bumpCounters({ leads_scored: counters.leads_scored + 1 });
 
       } catch (e) {
         limitations.push(`Could not analyze ${ex.company_name}: ${(e as Error).message}`);
@@ -969,9 +999,9 @@ TASK:
       );
     });
 
-
-
+    await bumpCounters({ deep_dive_done: counters.deep_dive_done + 1 });
   }
+
 
   // Deterministic scoring + tiering (rows were already streamed in as they were produced)
   const leadRows = allLeads.map(({ lead, eventId, eventName, eventDate, boothNumber }) =>

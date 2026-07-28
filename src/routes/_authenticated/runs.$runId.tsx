@@ -6,7 +6,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { getRun, rerunResearch } from "@/lib/research.functions";
 import { syncRunToCrm } from "@/lib/crm.functions";
 import { CrmSyncPreview } from "@/components/CrmSyncPreview";
-import { RunProgress, RunTimings, type StepEntry } from "@/components/RunProgress";
+import { RunProgress, RunTimings, type StepEntry, type RunCounters } from "@/components/RunProgress";
 
 import { listEmailTemplates } from "@/lib/templates.functions";
 import { renderForLead, type EmailTemplate } from "@/lib/email-template-engine";
@@ -174,20 +174,12 @@ function RunDetail() {
           createdAt={run.created_at}
           updatedAt={(run as { updated_at?: string }).updated_at ?? null}
           stepLog={((run as { step_log?: unknown }).step_log ?? []) as StepEntry[]}
+          counters={((run as { counters?: unknown }).counters ?? {}) as RunCounters}
+          liveEvents={events.length}
+          liveLeads={typedLeads.length}
         />
       )}
 
-      {inProgress && (
-        <div className="mb-6 flex items-center gap-2 rounded-md border border-border bg-card px-4 py-2 text-xs text-muted-foreground">
-          <span className="relative flex h-2 w-2">
-            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
-            <span className="relative inline-flex h-2 w-2 rounded-full bg-primary" />
-          </span>
-          Live — results appear below as they're found:{" "}
-          <span className="font-mono text-foreground">{events.length}</span> shows,{" "}
-          <span className="font-mono text-foreground">{typedLeads.length}</span> leads so far
-        </div>
-      )}
 
 
 
