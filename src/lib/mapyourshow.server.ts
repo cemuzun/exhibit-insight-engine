@@ -15,18 +15,16 @@ const UA =
 export function mapYourShowBase(url: string): string | null {
   try {
     const u = new URL(url);
-    const m = /\/(\d+_\d+)\//.exec(u.pathname);
-    const version = m?.[1];
+    // MapYourShow installs always live under a versioned app root such as
+    // "/8_0/", on mapyourshow.com or on the show's own directory subdomain.
+    const version = /\/(\d+_\d+)(\/|$)/.exec(u.pathname)?.[1];
     if (!version) return null;
-    if (!/mapyourshow\.com$/i.test(u.hostname) && !/^\/\d+_\d+\/(explore|exhibitor|floorplan|search)/i.test(u.pathname)) {
-      // Custom-domain MapYourShow installs still use the /8_0/<section>/ layout.
-      return null;
-    }
     return `${u.origin}/${version}`;
   } catch {
     return null;
   }
 }
+
 
 export function isMapYourShowUrl(url: string): boolean {
   return mapYourShowBase(url) !== null;
@@ -65,12 +63,38 @@ async function alphaChars(base: string): Promise<string[]> {
   const body = await getJson<{ DATA?: Array<{ value?: string; count?: number }> }>(
     `${base}/ajax/remote-proxy.cfm?action=getsearchoptions&function=getexhibitoralphachars`,
   );
-  const chars = (body?.DATA ?? [])
+  return (body?.DATA ?? [])
     .map((d) => d.value)
     .filter((v): v is string => typeof v === "string" && v.length > 0);
-  if (chars.length > 0) return chars;
-  return ["0", ...Array.from({ length: 26 }, (_, i) => String.fromCharCode(65 + i))];
 }
+
+const DEFAULT_ALPHA = ["0", ...Array.from({ length: 26 }, (_, i) => String.fromCharCode(65 + i))];
+
+/**
+ * Big shows keep their exhibitor directory on a MapYourShow subdomain that the
+ * event homepage may never link in plain HTML (directory.imts.com,
+ * exhibitors.<show>.com, …). Probe the handful of conventional hosts and app
+ * roots directly — each check is a single cheap JSON request.
+ */
+export async function discoverMapYourShowBase(officialUrl: string): Promise<string | null> {
+  let host: string;
+  try {
+    host = new URL(officialUrl).hostname;
+  } catch {
+    return null;
+  }
+  const root = host.replace(/^www\./i, "");
+  const hosts = [host, root, `directory.${root}`, `exhibitors.${root}`, `directory.${host}`];
+  const versions = ["8_0", "7_0"];
+  const bases = Array.from(
+    new Set(hosts.flatMap((h) => versions.map((v) => `https://${h}/${v}`))),
+  );
+  const found = await Promise.all(
+    bases.map(async (base) => ((await alphaChars(base)).length > 0 ? base : null)),
+  );
+  return found.find((b): b is string => b !== null) ?? null;
+}
+
 
 async function fetchLetter(base: string, letter: string, size: number): Promise<Hit[]> {
   const url =
@@ -95,13 +119,14 @@ export async function fetchMapYourShowExhibitors(
   url: string,
   opts?: { max?: number; concurrency?: number },
 ): Promise<MapYourShowResult | null> {
-  const base = mapYourShowBase(url);
+  const base = mapYourShowBase(url) ?? (await discoverMapYourShowBase(url));
   if (!base) return null;
 
   const max = opts?.max && opts.max > 0 ? opts.max : 100_000;
   const concurrency = opts?.concurrency ?? 4;
-  const letters = await alphaChars(base);
-  if (letters.length === 0) return null;
+  const discovered = await alphaChars(base);
+  const letters = discovered.length > 0 ? discovered : DEFAULT_ALPHA;
+
 
   const hits: Hit[] = [];
   for (let i = 0; i < letters.length; i += concurrency) {
