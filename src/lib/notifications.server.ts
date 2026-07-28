@@ -31,6 +31,89 @@ export function lastCompletedStep(stepLog: unknown): { key: string | null; messa
   const chosen = finished ?? steps[steps.length - 1];
   return { key: chosen?.key ?? null, message: chosen?.message ?? null };
 }
+/** Look up who owns a run (notifications are always addressed to the owner). */
+export async function runOwner(
+  admin: SupabaseClient,
+  runId: string,
+): Promise<{ userId: string | null; inputUrl: string | null }> {
+  const { data } = await admin
+    .from("research_runs")
+    .select("user_id, input_url")
+    .eq("id", runId)
+    .maybeSingle();
+  return { userId: data?.user_id ?? null, inputUrl: data?.input_url ?? null };
+}
+
+/** Qualified-lead counts that are worth interrupting the user for. */
+export const LEAD_MILESTONES = [5, 10, 25, 50, 100, 200, 500];
+
+/** Highest milestone crossed when the qualified count moves from → to. */
+export function crossedMilestone(from: number, to: number): number | null {
+  const crossed = LEAD_MILESTONES.filter((m) => from < m && to >= m);
+  return crossed.length ? crossed[crossed.length - 1] : null;
+}
+
+/** Run finished successfully. */
+export async function notifyRunComplete(
+  admin: SupabaseClient,
+  params: {
+    runId: string;
+    userId: string;
+    inputUrl: string;
+    leads: number;
+    qualified: number;
+    tier1: number;
+    shows: number;
+  },
+): Promise<void> {
+  try {
+    const body = `${params.inputUrl} finished — ${params.shows} shows reviewed, ${params.leads} leads scored, ${params.qualified} qualified (${params.tier1} Tier 1).`;
+    const emailStatus = await sendAlertEmail();
+    await admin.from("notifications").insert({
+      user_id: params.userId,
+      type: "run_complete",
+      title: "Research run complete",
+      body,
+      run_id: params.runId,
+      last_step: "complete",
+      last_step_message: null,
+      email_status: emailStatus,
+    });
+  } catch {
+    // never break the pipeline over a notification
+  }
+}
+
+/** Qualified-lead count crossed a milestone while the run is still working. */
+export async function notifyLeadMilestone(
+  admin: SupabaseClient,
+  params: { runId: string; userId: string; inputUrl: string; milestone: number; qualified: number },
+): Promise<void> {
+  try {
+    const emailStatus = await sendAlertEmail();
+    await admin.from("notifications").insert({
+      user_id: params.userId,
+      type: "lead_milestone",
+      title: `${params.milestone}+ qualified leads found`,
+      body: `${params.inputUrl} has produced ${params.qualified} qualified leads (score 65+) so far — the run is still working.`,
+      run_id: params.runId,
+      last_step: "enrich_leads",
+      last_step_message: null,
+      email_status: emailStatus,
+    });
+  } catch {
+    // non-fatal
+  }
+}
+
+/**
+ * Email delivery for alerts. Requires a verified sender domain + app email
+ * templates; until those exist alerts are recorded in-app only.
+ */
+async function sendAlertEmail(): Promise<"sent" | "skipped" | "failed"> {
+  return "skipped";
+}
+
 
 /**
  * Record a run failure: writes an in-app notification and (when app emails are

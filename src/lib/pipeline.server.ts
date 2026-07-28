@@ -661,6 +661,26 @@ export async function runPipeline(
     await admin.from("research_runs").update({ counters }).eq("id", runId);
   };
 
+  // Alert the run owner when qualified leads (score 65+) cross a milestone.
+  let qualifiedCount = 0;
+  const announceMilestone = async (before: number, after: number) => {
+    try {
+      const { crossedMilestone, notifyLeadMilestone, runOwner } = await import("./notifications.server");
+      const milestone = crossedMilestone(before, after);
+      if (!milestone) return;
+      const { userId, inputUrl } = await runOwner(admin, runId);
+      if (!userId) return;
+      await notifyLeadMilestone(admin, {
+        runId,
+        userId,
+        inputUrl: inputUrl ?? input.inputUrl,
+        milestone,
+        qualified: after,
+      });
+    } catch {
+      // notifications must never break the run
+    }
+  };
 
 
   const finishSteps = async () => {
@@ -1056,6 +1076,12 @@ TASK:
         }
         await bumpCounters({ leads_scored: counters.leads_scored + 1 });
         await pushScoringEntry(explainLeadScore(row));
+        if (row.lead_score >= 65) {
+          const before = qualifiedCount;
+          qualifiedCount += 1;
+          await announceMilestone(before, qualifiedCount);
+        }
+
 
       } catch (e) {
         limitations.push(`Could not analyze ${ex.company_name}: ${(e as Error).message}`);
@@ -1144,4 +1170,23 @@ Limitations: ${limitations.slice(0, 10).join(" | ")}`;
       completed_at: new Date().toISOString(),
     })
     .eq("id", runId);
+
+  // Completion alert (in-app; email once a sender domain is verified).
+  try {
+    const { notifyRunComplete, runOwner } = await import("./notifications.server");
+    const { userId, inputUrl } = await runOwner(admin, runId);
+    if (userId) {
+      await notifyRunComplete(admin, {
+        runId,
+        userId,
+        inputUrl: inputUrl ?? input.inputUrl,
+        leads: leadRows.length,
+        qualified: leadRows.filter((l) => l.lead_score >= 65).length,
+        tier1: t1,
+        shows: eventsInDb.length,
+      });
+    }
+  } catch {
+    // non-fatal
+  }
 }

@@ -9,6 +9,7 @@ import { listNotifications, markNotificationsRead } from "@/lib/notifications.fu
 
 type Notification = {
   id: string;
+  type?: string | null;
   title: string;
   body: string | null;
   run_id: string | null;
@@ -46,7 +47,13 @@ export function NotificationsBell() {
         { event: "INSERT", schema: "public", table: "notifications" },
         (payload) => {
           const n = payload.new as Notification;
-          toast.error(n.title, { description: n.body ?? undefined });
+          const show =
+            n.type === "run_complete"
+              ? toast.success
+              : n.type === "lead_milestone"
+                ? toast
+                : toast.error;
+          show(n.title, { description: n.body ?? undefined });
           qc.invalidateQueries({ queryKey: ["notifications"] });
         },
       )
@@ -84,7 +91,18 @@ export function NotificationsBell() {
             {items.map((n) => (
               <li key={n.id} className="rounded-md p-2 hover:bg-muted/50">
                 <div className="flex items-start justify-between gap-2">
-                  <span className="text-sm font-medium">{n.title}</span>
+                  <span className="flex items-center gap-1.5 text-sm font-medium">
+                    <span
+                      className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                        n.type === "run_complete"
+                          ? "bg-primary"
+                          : n.type === "lead_milestone"
+                            ? "bg-foreground/50"
+                            : "bg-destructive"
+                      }`}
+                    />
+                    {n.title}
+                  </span>
                   <span className="shrink-0 text-[11px] text-muted-foreground">
                     {new Date(n.created_at).toLocaleString()}
                   </span>
