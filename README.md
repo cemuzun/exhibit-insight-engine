@@ -36,6 +36,7 @@ npm run verify:ai
 - The package is installed in `node_modules`.
 - The installed version matches the exact version in `package.json` (and the lockfile for pinned packages).
 - Required environment variables are set and non-empty.
+- **Database schema:** every required table (`profiles`, `research_runs`, `events`, `leads`, `email_templates`, `digest_schedules`) and its expected columns exist and are reachable through the Data API. Missing objects print the exact `CREATE TABLE` / `GRANT` / RLS guidance. Skipped automatically when no database credentials are present.
 - **Smoke test:** a TypeScript compile (`tsc --noEmit`) plus a minimal runtime script that imports and initialises `zod`, `ai` and `@ai-sdk/openai-compatible`, so a broken install fails here rather than at request time.
 
 If everything passes, you will see a list of required packages with their installed and expected versions, a list of configured environment variables, and `smoke: PASSED`.
@@ -48,6 +49,7 @@ Related scripts:
 | `npm run verify:ai:deps` | dependency/lockfile/env checks only (add `-- --no-env` to skip env vars) |
 | `npm run verify:ai:build` | dependency checks, then a full production build as the smoke step |
 | `npm run smoke` | the smoke test on its own |
+| `npm run verify:schema` | the database schema/RPC check on its own |
 
 Build scripts (`dev`, `build`, `build:dev`) run `verify:ai:deps -- --no-env`, because deploy-time secrets are injected by the platform and are not present in the build environment.
 
