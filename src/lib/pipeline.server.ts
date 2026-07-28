@@ -1907,12 +1907,12 @@ ${sourceLinks.slice(0, 80).join("\n")}`,
 
     // MapYourShow directories (IMTS, PACK EXPO, …) render nothing server-side.
     // Pull the full A–Z list from the same JSON endpoint their SPA uses.
-    const mysUrl = [
-      ev.official_url,
-      ...sources.map((s) => s.url),
-      ...diag.accepted,
-      ...diag.rejected.map((r) => r.url),
-    ].find((u): u is string => typeof u === "string" && isMapYourShowUrl(u));
+    const mysUrl =
+      (mysBase ? `${mysBase}/explore/exhibitor-alphalist.cfm` : null) ??
+      [...sources.map((s) => s.url), ...diag.accepted, ...diag.rejected.map((r) => r.url)].find(
+        (u): u is string => typeof u === "string" && isMapYourShowUrl(u),
+      );
+
 
     if (mysUrl) {
       try {
