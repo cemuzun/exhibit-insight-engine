@@ -271,6 +271,8 @@ function RunDetail() {
 
       {mode === "dashboard" ? (
         <DashboardView run={run} events={visibleEvents} leads={typedLeads} es={es} onSelect={setSelected} />
+      ) : mode === "exhibitors" ? (
+        <ExhibitorsTable rows={typedLeads as unknown as ExhibitorRow[]} />
       ) : (
         <ReportView run={run} events={visibleEvents} leads={typedLeads} es={es} />
       )}
