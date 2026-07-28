@@ -39,6 +39,10 @@ export type RunCounters = {
   deep_dive_total?: number;
   deep_dive_done?: number;
   exhibitors_found?: number;
+  exhibitor_pages_parsed?: number;
+  exhibitor_pages_with_hits?: number;
+  last_exhibitor_at?: string | null;
+  last_exhibitor_source?: string | null;
   leads_scored?: number;
   pages_reused?: number;
   pages_fetched?: number;
@@ -99,6 +103,13 @@ export function RunProgress({
   const ddDone = counters.deep_dive_done ?? 0;
   const leads = counters.leads_scored ?? liveLeads;
   const exhibitors = counters.exhibitors_found ?? 0;
+  const exhibitorPages = counters.exhibitor_pages_parsed ?? 0;
+  const exhibitorPageHits = counters.exhibitor_pages_with_hits ?? 0;
+  const lastExhibitorAt = counters.last_exhibitor_at ?? null;
+  const lastExhibitorSource = counters.last_exhibitor_source ?? null;
+  const sinceExhibitor = lastExhibitorAt
+    ? Math.max(0, Math.floor((now - new Date(lastExhibitorAt).getTime()) / 1000))
+    : null;
   const pagesReused = counters.pages_reused ?? 0;
   const pagesFetched = counters.pages_fetched ?? 0;
 
@@ -146,9 +157,29 @@ export function RunProgress({
               {pagesReused > 0 && <> · {pagesReused} reused from cache</>}
             </div>
           )}
-          {exhibitors > 0 && (
-            <div className="mt-2 text-[11px] text-muted-foreground">
-              {exhibitors} exhibitor{exhibitors === 1 ? "" : "s"} queued for scoring · {leads} scored so far
+          {(exhibitors > 0 || exhibitorPages > 0) && (
+            <div className="mt-3 rounded-md border border-border bg-background px-3 py-2">
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <div className="text-xs font-medium text-foreground">
+                  <span className="font-mono text-base">{exhibitors}</span> exhibitor
+                  {exhibitors === 1 ? "" : "s"} found
+                </div>
+                <div className="font-mono text-[10px] text-muted-foreground">
+                  {exhibitorPages} page{exhibitorPages === 1 ? "" : "s"} parsed · {exhibitorPageHits} with hits
+                </div>
+              </div>
+              <div className="mt-1 text-[11px] text-muted-foreground">
+                {lastExhibitorAt ? (
+                  <>
+                    Last extraction {sinceExhibitor !== null ? `${fmt(sinceExhibitor)} ago` : ""} at{" "}
+                    <span className="font-mono">{new Date(lastExhibitorAt).toLocaleTimeString()}</span>
+                    {lastExhibitorSource && <> · {lastExhibitorSource}</>}
+                  </>
+                ) : (
+                  "No exhibitors extracted yet — still parsing candidate pages."
+                )}
+                {leads > 0 && <> · {leads} scored so far</>}
+              </div>
             </div>
           )}
 

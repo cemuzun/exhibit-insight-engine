@@ -857,6 +857,14 @@ export async function runPipeline(
     deep_dive_total: 0,
     deep_dive_done: 0,
     exhibitors_found: 0,
+    /** Directory/detail pages parsed while hunting exhibitors. */
+    exhibitor_pages_parsed: 0,
+    /** Pages that actually yielded at least one exhibitor. */
+    exhibitor_pages_with_hits: 0,
+    /** ISO timestamp of the most recent successful exhibitor extraction. */
+    last_exhibitor_at: null as string | null,
+    /** Hostname of the page that produced the most recent exhibitors. */
+    last_exhibitor_source: null as string | null,
     leads_scored: 0,
     pages_reused: 0,
     pages_fetched: 0,
@@ -1319,19 +1327,41 @@ ${sourceLinks.slice(0, 80).join("\n")}`,
     let exhibitors: import("zod").infer<typeof ExhibitorListSchema>["exhibitors"] = [];
     const addCandidateExhibitors = (items: typeof exhibitors) => {
       const seen = new Set(exhibitors.map((item) => normalizedCompanyKey(item.company_name)));
+      let added = 0;
       for (const item of items) {
         const key = normalizedCompanyKey(item.company_name);
         if (!key || seen.has(key)) continue;
         exhibitors.push(item);
         seen.add(key);
+        added += 1;
         if (exhibitors.length >= maxLeads) break;
       }
+      return added;
+    };
+
+    /** Live counter update after each directory/detail page is parsed. */
+    const recordPageParsed = async (sourceUrl: string, added: number) => {
+      let host = sourceUrl;
+      try {
+        host = new URL(sourceUrl).hostname;
+      } catch {
+        // keep the raw string
+      }
+      await bumpCounters({
+        exhibitor_pages_parsed: counters.exhibitor_pages_parsed + 1,
+        exhibitor_pages_with_hits: counters.exhibitor_pages_with_hits + (added > 0 ? 1 : 0),
+        exhibitors_found: counters.exhibitors_found + added,
+        ...(added > 0
+          ? { last_exhibitor_at: new Date().toISOString(), last_exhibitor_source: host }
+          : {}),
+      });
     };
 
     for (const src of sources) {
       const deterministic = parseExhibitorsFromMarkdown(src.markdown, src.url, maxLeads * 2);
       if (deterministic.length > 0) {
-        addCandidateExhibitors(deterministic);
+        const added = addCandidateExhibitors(deterministic);
+        await recordPageParsed(src.url, added);
         await pushScoringEntry({
           at: new Date().toISOString(),
           company: deterministic[0]?.company_name ?? "—",
@@ -1362,12 +1392,13 @@ ${src.markdown.slice(0, 60000)}`;
           limitations.push(`Exhibitor list for ${ev.event_name} is partial.`);
         }
         limitations.push(...(exhibitorList.limitations ?? []));
-        if (exhibitorList.exhibitors.length > 0) {
-          addCandidateExhibitors(exhibitorList.exhibitors);
-          if (exhibitors.length >= maxLeads) break;
-        }
+        const added =
+          exhibitorList.exhibitors.length > 0 ? addCandidateExhibitors(exhibitorList.exhibitors) : 0;
+        await recordPageParsed(src.url, added);
+        if (exhibitors.length >= maxLeads) break;
       } catch (e) {
         limitations.push(`Exhibitor extraction failed for ${ev.event_name}: ${(e as Error).message}`);
+        await recordPageParsed(src.url, 0);
       }
     }
 
@@ -1385,9 +1416,6 @@ ${src.markdown.slice(0, 60000)}`;
       await bumpCounters({ deep_dive_done: counters.deep_dive_done + 1 });
       continue;
     }
-
-    await bumpCounters({ exhibitors_found: counters.exhibitors_found + exhibitors.length });
-
 
     let completed = 0;
 
