@@ -12,6 +12,8 @@ const CreateInput = z.object({
   startDateTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullish(),
   maxEvents: z.number().int().min(1).max(2000).default(500),
   maxDirectoryPages: z.number().int().min(1).max(50).default(25),
+  /** Reuse directory pages fetched within this many hours (0 = always refetch). */
+  pageReuseHours: z.number().int().min(0).max(720).default(24),
   maxDeepDiveShows: z.number().int().min(1).max(25).default(4),
   minLeadTimeDays: z.number().int().min(0).max(365).default(45),
   priorityIndustries: z.array(z.string().max(100)).max(20).default([]),
@@ -36,6 +38,7 @@ export const createResearchRun = createServerFn({ method: "POST" })
           startDateTo: data.startDateTo ?? null,
           maxEvents: data.maxEvents,
           maxDirectoryPages: data.maxDirectoryPages,
+          pageReuseHours: data.pageReuseHours,
           maxDeepDiveShows: data.maxDeepDiveShows,
           minLeadTimeDays: data.minLeadTimeDays,
           priorityIndustries: data.priorityIndustries,
@@ -80,6 +83,7 @@ export const runResearch = createServerFn({ method: "POST" })
             startDateTo?: string | null;
             maxEvents?: number;
             maxDirectoryPages?: number;
+            pageReuseHours?: number;
             maxDeepDiveShows?: number;
             minLeadTimeDays?: number;
             priorityIndustries?: string[];
@@ -148,6 +152,7 @@ export const rerunResearch = createServerFn({ method: "POST" })
             startDateTo?: string | null;
             maxEvents?: number;
             maxDirectoryPages?: number;
+            pageReuseHours?: number;
             maxDeepDiveShows?: number;
             minLeadTimeDays?: number;
             priorityIndustries?: string[];
@@ -245,6 +250,7 @@ export const resumeStalledRun = createServerFn({ method: "POST" })
             startDateTo?: string | null;
             maxEvents?: number;
             maxDirectoryPages?: number;
+            pageReuseHours?: number;
             maxDeepDiveShows?: number;
             minLeadTimeDays?: number;
             priorityIndustries?: string[];
