@@ -50,5 +50,40 @@ describe("preflight script (integration)", () => {
     expect(output).toMatch(/npm install/i);
     expect(output).toContain("ai");
   });
+
+  it("fails when an exact-pinned package does not match the lockfile", async () => {
+    const { REQUIRED } = await import("../../scripts/required-packages.mjs");
+    const dir = scaffold(REQUIRED);
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({ name: "t", version: "0.0.0", dependencies: { ai: "7.0.37" } }),
+    );
+    writeFileSync(
+      join(dir, "bun.lock"),
+      JSON.stringify({ lockfileVersion: 1, packages: { ai: ["ai@6.0.0", "", {}, ""] } }),
+    );
+    const res = runIn(dir);
+    expect(res.status).not.toBe(0);
+    const output = res.stdout + res.stderr;
+    expect(output).toMatch(/pin mismatch/i);
+    expect(output).toContain("6.0.0");
+  });
+
+  it("passes pin check when the lockfile matches", async () => {
+    const { REQUIRED } = await import("../../scripts/required-packages.mjs");
+    const dir = scaffold(REQUIRED);
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({ name: "t", version: "0.0.0", dependencies: { ai: "7.0.37" } }),
+    );
+    writeFileSync(
+      join(dir, "bun.lock"),
+      JSON.stringify({ lockfileVersion: 1, packages: { ai: ["ai@7.0.37", "", {}, ""] } }),
+    );
+    const res = runIn(dir);
+    expect(res.status).toBe(0);
+    expect(res.stdout).toMatch(/pinned versions match/i);
+  });
 });
+
 
