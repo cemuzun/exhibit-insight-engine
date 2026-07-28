@@ -1170,4 +1170,23 @@ Limitations: ${limitations.slice(0, 10).join(" | ")}`;
       completed_at: new Date().toISOString(),
     })
     .eq("id", runId);
+
+  // Completion alert (in-app; email once a sender domain is verified).
+  try {
+    const { notifyRunComplete, runOwner } = await import("./notifications.server");
+    const { userId, inputUrl } = await runOwner(admin, runId);
+    if (userId) {
+      await notifyRunComplete(admin, {
+        runId,
+        userId,
+        inputUrl: inputUrl ?? input.inputUrl,
+        leads: leadRows.length,
+        qualified: leadRows.filter((l) => l.lead_score >= 65).length,
+        tier1: t1,
+        shows: eventsInDb.length,
+      });
+    }
+  } catch {
+    // non-fatal
+  }
 }
