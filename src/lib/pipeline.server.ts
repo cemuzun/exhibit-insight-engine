@@ -12,6 +12,15 @@ import {
   mapPool,
 } from "./rate-limit.server";
 import {
+  DEFAULT_SCORING,
+  SCORE_COMPONENTS,
+  applyWeights,
+  componentMax,
+  normalizeScoringSettings,
+  tierFor,
+  type ScoringSettings,
+} from "./scoring";
+import {
   EventListSchema,
   ExhibitorListSchema,
   LeadSchema,
@@ -189,18 +198,6 @@ export type ScoringFeedEntry = {
   reason: string;
 };
 
-const SCORE_MAX: Record<string, number> = {
-  trade_show_activity: 15,
-  booth_scale_complexity: 15,
-  led_digital_fit: 15,
-  buying_capacity: 10,
-  timing: 10,
-  decision_maker_availability: 10,
-  growth_trigger_signals: 10,
-  service_fit: 10,
-  vendor_opportunity: 5,
-};
-
 const TIER_REASON: Record<string, string> = {
   TIER_1_IMMEDIATE: "Top score with a confirmed decision-maker path — prioritized for immediate outreach.",
   TIER_2_HIGH_PRIORITY: "Strong fit but no confirmed contact yet — high-priority outreach.",
@@ -209,13 +206,16 @@ const TIER_REASON: Record<string, string> = {
 };
 
 /** Explain a scored lead: strongest and weakest scoring components. */
-export function explainLeadScore(row: ReturnType<typeof buildLeadRow>): ScoringFeedEntry {
+export function explainLeadScore(
+  row: ReturnType<typeof buildLeadRow>,
+  scoring: ScoringSettings = DEFAULT_SCORING,
+): ScoringFeedEntry {
   const b = (row.score_breakdown ?? {}) as Record<string, number>;
-  const parts = Object.keys(SCORE_MAX).map((key) => ({
-    key,
-    points: Number(b[key] ?? 0),
-    max: SCORE_MAX[key],
-  }));
+  const parts = SCORE_COMPONENTS.map((c) => ({
+    key: c.key as string,
+    points: Number(b[c.key] ?? 0),
+    max: componentMax(scoring, c.key),
+  })).filter((p) => p.max > 0);
   const byRatio = [...parts].sort((a, b2) => b2.points / b2.max - a.points / a.max);
   return {
     at: new Date().toISOString(),
@@ -234,20 +234,16 @@ export function explainLeadScore(row: ReturnType<typeof buildLeadRow>): ScoringF
 
 
 /** Deterministic scoring + tiering for one enriched exhibitor. */
-function buildLeadRow(runId: string, inputUrl: string, entry: LeadEntry) {
+function buildLeadRow(
+  runId: string,
+  inputUrl: string,
+  entry: LeadEntry,
+  scoring: ScoringSettings = DEFAULT_SCORING,
+) {
   const { lead, eventId, eventName, eventDate, boothNumber } = entry;
-  const b = lead.score_breakdown;
-  const total = Math.min(
-    100,
-    b.trade_show_activity +
-      b.booth_scale_complexity +
-      b.led_digital_fit +
-      b.buying_capacity +
-      b.timing +
-      b.decision_maker_availability +
-      b.growth_trigger_signals +
-      b.service_fit +
-      b.vendor_opportunity,
+  const { breakdown: b, total } = applyWeights(
+    (lead.score_breakdown ?? {}) as Record<string, number>,
+    scoring,
   );
 
   // Tier 1 requires a credible decision-maker path
@@ -255,11 +251,7 @@ function buildLeadRow(runId: string, inputUrl: string, entry: LeadEntry) {
   const hasVerified = decisionMakers.some(
     (dm) => (dm.contact_confidence ?? 0) >= 70 && dm.evidence_status === "CONFIRMED",
   );
-  let tier: string;
-  if (total >= 80 && hasVerified) tier = "TIER_1_IMMEDIATE";
-  else if (total >= 65) tier = "TIER_2_HIGH_PRIORITY";
-  else if (total >= 50) tier = "TIER_3_NURTURE";
-  else tier = "TIER_4_LOW_PRIORITY";
+  const tier = tierFor(total, hasVerified, scoring);
 
   return {
     run_id: runId,
@@ -822,6 +814,23 @@ export async function runPipeline(
   };
 
   // Alert the run owner when qualified leads (score 65+) cross a milestone.
+  // Per-user scoring configuration (weights + tier thresholds).
+  let scoring: ScoringSettings = DEFAULT_SCORING;
+  try {
+    const { runOwner } = await import("./notifications.server");
+    const { userId } = await runOwner(admin, runId);
+    if (userId) {
+      const { data: scoringRow } = await admin
+        .from("scoring_settings")
+        .select("*")
+        .eq("user_id", userId)
+        .maybeSingle();
+      if (scoringRow) scoring = normalizeScoringSettings(scoringRow);
+    }
+  } catch {
+    // fall back to defaults
+  }
+
   let qualifiedCount = 0;
   const announceMilestone = async (before: number, after: number) => {
     try {
@@ -1365,6 +1374,7 @@ TASK:
 1. Estimate booth type, size, likely services needed, and an estimated project value range in USD.
 2. Score the opportunity using the 9-component model. Components must sum to lead_score (max 100):
    - trade_show_activity (0-15), booth_scale_complexity (0-15), led_digital_fit (0-15), buying_capacity (0-10), timing (0-10), decision_maker_availability (0-10), growth_trigger_signals (0-10), service_fit (0-10), vendor_opportunity (0-5).
+   Buyer's weighting emphasis (rescaled after you score — use it to judge what matters most): ${SCORE_COMPONENTS.map((c) => `${c.key}=${componentMax(scoring, c.key)}pts`).join(", ")}.
 3. Suggest 1-3 decision makers. When you cannot verify a specific person (default), return a RECOMMENDED_TARGET with only title, role_classification=RECOMMENDED_TARGET, name=null, professional_profile_url=null, public_business_email=null, contact_confidence < 70, evidence_status=INFERRED. Company-size logic: <50 employees → founder/CEO/head of marketing; 50-500 → marketing/event marketing director/manager; >500 → director of events, experiential marketing, trade show manager.
 4. Draft a 60-120 word first-touch email using only facts actually stated above (never invent details). Include subject line separately. Also draft a LinkedIn message ≤ 300 characters.
 5. List buying_triggers, risks_and_uncertainties, unknown_fields, and a plain-language rationale.
@@ -1382,7 +1392,7 @@ TASK:
           boothNumber: ex.booth_number ?? null,
         };
         allLeads.push(entry);
-        const row = buildLeadRow(runId, input.inputUrl, entry);
+        const row = buildLeadRow(runId, input.inputUrl, entry, scoring);
         // Stream the lead into the database immediately so the UI can show it live.
         try {
           await admin.from("leads").insert(row);
@@ -1390,8 +1400,8 @@ TASK:
           // non-fatal; the row is still counted in the summary
         }
         await bumpCounters({ leads_scored: counters.leads_scored + 1 });
-        await pushScoringEntry(explainLeadScore(row));
-        if (row.lead_score >= 65) {
+        await pushScoringEntry(explainLeadScore(row, scoring));
+        if (row.lead_score >= scoring.qualified_min) {
           const before = qualifiedCount;
           qualifiedCount += 1;
           await announceMilestone(before, qualifiedCount);
@@ -1423,7 +1433,7 @@ TASK:
 
   // Deterministic scoring + tiering (rows were already streamed in as they were produced)
   const leadRows = allLeads.map(({ lead, eventId, eventName, eventDate, boothNumber }) =>
-    buildLeadRow(runId, input.inputUrl, { lead, eventId, eventName, eventDate, boothNumber }),
+    buildLeadRow(runId, input.inputUrl, { lead, eventId, eventName, eventDate, boothNumber }, scoring),
   );
 
 
@@ -1443,7 +1453,7 @@ TASK:
   let execSummary: import("zod").infer<typeof ExecSummarySchema> = {
     shows_reviewed: eventsInDb.length,
     exhibitors_identified: leadRows.length,
-    qualified_accounts: leadRows.filter((l) => l.lead_score >= 50).length,
+    qualified_accounts: leadRows.filter((l) => l.lead_score >= scoring.tier3_min).length,
     verified_decision_makers: verifiedDMs,
     tier_1_leads: t1,
     top_industries: [],
@@ -1497,7 +1507,7 @@ Limitations: ${limitations.slice(0, 10).join(" | ")}`;
         userId,
         inputUrl: inputUrl ?? input.inputUrl,
         leads: leadRows.length,
-        qualified: leadRows.filter((l) => l.lead_score >= 65).length,
+        qualified: leadRows.filter((l) => l.lead_score >= scoring.qualified_min).length,
         tier1: t1,
         shows: eventsInDb.length,
       });
