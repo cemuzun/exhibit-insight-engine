@@ -7,6 +7,14 @@ import {
   type TemplateLead,
   type TemplateDecisionMaker,
 } from "./email-template-engine";
+import {
+  evaluateEmailGate,
+  matchServices,
+  outreachDates,
+  outreachPhase,
+  type PersonalizationFact,
+} from "./email-gate";
+import { buildSubject, validateEmail } from "./email-validator";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
@@ -53,6 +61,19 @@ export const buildOutreachQueue = createServerFn({ method: "POST" })
       .gte("lead_score", data.minScore);
     if (error) throw new Error(error.message);
 
+    const eventIds = Array.from(
+      new Set((leads ?? []).map((l) => l.event_id).filter((id): id is string => Boolean(id))),
+    );
+    const { data: eventRows } = eventIds.length
+      ? await supabase
+          .from("events")
+          .select("id, event_name, verified_status, start_date, event_year")
+          .in("id", eventIds)
+      : { data: [] as Array<Record<string, unknown>> };
+    const eventsById = new Map(
+      (eventRows ?? []).map((e) => [String((e as { id: string }).id), e as Record<string, unknown>]),
+    );
+
     const { data: templates } = await supabase
       .from("email_templates")
       .select("*")
@@ -80,19 +101,78 @@ export const buildOutreachQueue = createServerFn({ method: "POST" })
       lead_score: number;
       priority_tier: string | null;
       status: string;
+      draft_status: string;
+      blocked_reasons: string[];
+      personalization_fact: PersonalizationFact;
+      service_offered: string;
+      validation: unknown;
+      outreach_phase: string;
+      recommended_send_date: string;
+      follow_up_date: string;
     };
     const rows: InsertRow[] = [];
     let noContact = 0;
 
+    let blocked = 0;
+
     for (const lead of leads ?? []) {
+      const event = lead.event_id ? eventsById.get(lead.event_id) : undefined;
+      const eventName = String(event?.event_name ?? lead.trade_show ?? "");
       const dms = (lead.decision_makers ?? []) as TemplateDecisionMaker[];
       const contacts = dms.filter((dm) =>
         EMAIL_RE.test((dm.public_business_email ?? "").trim()),
       );
+
+      // Spec gate: every one of the six conditions must hold before drafting.
+      const facts: PersonalizationFact[] = [];
+      if (lead.evidence_text && lead.evidence_source_url_placeholder !== undefined) {
+        // placeholder branch never runs; kept for type narrowing safety
+      }
+      const evidenceUrl = (lead.source_urls ?? [])[0] ?? null;
+      if (lead.evidence_text && evidenceUrl) {
+        facts.push({
+          type: lead.booth_number ? "BOOTH_NUMBER" : "CONFIRMED_EXHIBITOR",
+          value: lead.booth_number
+            ? `booth ${lead.booth_number} at ${eventName}`
+            : `confirmed exhibitor at ${eventName}`,
+          source_url: evidenceUrl,
+          confidence: Number(lead.extraction_confidence ?? 0.8),
+        });
+      }
+      const services = matchServices({
+        boothType: lead.booth_type,
+        boothSize: lead.booth_size_estimate,
+        recommendedServices: lead.recommended_services,
+      });
+      const gate = evaluateEmailGate({
+        eventVerifiedStatus: String(event?.verified_status ?? "UNVERIFIED"),
+        exhibitorRecordStatus: String(lead.record_status ?? "UNCERTAIN"),
+        hasExhibitorEvidence: Boolean(lead.evidence_text),
+        hasContactOrTargetTitle: dms.length > 0,
+        personalizationFacts: facts,
+        matchedServices: services,
+      });
+
+      if (gate.status === "BLOCKED") {
+        blocked += 1;
+        await supabase
+          .from("leads")
+          .update({ blocked_reasons: gate.reasons })
+          .eq("id", lead.id);
+        continue;
+      }
+
       if (!contacts.length) {
         noContact += 1;
         continue;
       }
+
+      const startDate = (event?.start_date as string | null) ?? lead.event_date ?? null;
+      const days = startDate
+        ? Math.round((Date.parse(String(startDate)) - Date.now()) / 86_400_000)
+        : null;
+      const phase = outreachPhase(Number.isFinite(days as number) ? (days as number) : null);
+      const dates = outreachDates(Number.isFinite(days as number) ? (days as number) : null);
 
       for (const dm of contacts) {
         const email = (dm.public_business_email ?? "").trim().toLowerCase();
@@ -102,6 +182,20 @@ export const buildOutreachQueue = createServerFn({ method: "POST" })
         const templateLead: TemplateLead = { ...(lead as unknown as TemplateLead), decision_makers: [dm] };
         const rendered = renderForLead((templates ?? []) as EmailTemplate[], templateLead);
 
+        const subject = rendered?.subject || buildSubject(lead.company_name, eventName);
+        const body = rendered?.body || lead.personalized_email || "";
+        const validation = validateEmail({
+          subject,
+          body,
+          companyName: lead.company_name,
+          eventName,
+          personalizationFactValue: gate.fact.value,
+          serviceOffered: gate.service,
+          recipientName: dm.name ?? null,
+          hasBoothEvidence: Boolean(lead.booth_number),
+          recipientVerified: (dm.contact_confidence ?? 0) >= 70,
+        });
+
         rows.push({
           user_id: userId,
           run_id: data.runId,
@@ -110,12 +204,20 @@ export const buildOutreachQueue = createServerFn({ method: "POST" })
           recipient_name: dm.name ?? null,
           recipient_title: dm.title ?? null,
           recipient_email: email,
-          subject: rendered?.subject || `Booth support for ${lead.company_name} at ${lead.trade_show ?? "your next show"}`,
-          body: rendered?.body || lead.personalized_email || "",
+          subject,
+          body,
           template_name: rendered?.template.name ?? null,
           lead_score: lead.lead_score ?? 0,
           priority_tier: lead.priority_tier ?? null,
           status: "draft",
+          draft_status: validation.valid ? "READY" : "NEEDS_REVIEW",
+          blocked_reasons: validation.errors.map((e) => e.code),
+          personalization_fact: gate.fact,
+          service_offered: gate.service,
+          validation,
+          outreach_phase: phase,
+          recommended_send_date: dates.recommended_send_date,
+          follow_up_date: dates.follow_up_date,
         });
       }
     }
@@ -129,6 +231,7 @@ export const buildOutreachQueue = createServerFn({ method: "POST" })
       created: rows.length,
       leadsConsidered: leads?.length ?? 0,
       leadsWithoutContact: noContact,
+      leadsBlockedByGate: blocked,
     };
   });
 
