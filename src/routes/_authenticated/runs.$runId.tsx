@@ -1,8 +1,8 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, useMemo } from "react";
-import { getRun } from "@/lib/research.functions";
+import { getRun, rerunResearch } from "@/lib/research.functions";
 import { syncRunToCrm } from "@/lib/crm.functions";
 import { CrmSyncPreview } from "@/components/CrmSyncPreview";
 import { RunProgress } from "@/components/RunProgress";
@@ -113,6 +113,7 @@ function RunDetail() {
         </div>
         {!inProgress && (
           <div className="flex items-center gap-3">
+            <RerunButton runId={runId} />
             <CrmSyncPreview runId={runId} disabled={typedLeads.length === 0} />
             <CrmSyncButton runId={runId} disabled={typedLeads.length === 0} />
 
@@ -149,6 +150,37 @@ function RunDetail() {
 
       {selected && <LeadDrawer lead={selected} onClose={() => setSelected(null)} />}
     </main>
+  );
+}
+
+function RerunButton({ runId }: { runId: string }) {
+  const rerun = useServerFn(rerunResearch);
+  const qc = useQueryClient();
+  const [busy, setBusy] = useState(false);
+
+  async function go() {
+    if (!window.confirm("Re-run this research? Existing events and leads for this run will be replaced.")) return;
+    setBusy(true);
+    try {
+      await rerun({ data: { runId } });
+      toast.success("Re-run complete");
+    } catch (e) {
+      toast.error((e as Error).message || "Re-run failed");
+    } finally {
+      setBusy(false);
+      qc.invalidateQueries({ queryKey: ["run", runId] });
+    }
+  }
+
+  return (
+    <button
+      onClick={go}
+      disabled={busy}
+      className="rounded-md border border-border bg-card px-3 py-2 text-xs font-medium hover:bg-muted disabled:opacity-50"
+      title="Run the research pipeline again for this URL, replacing existing results"
+    >
+      {busy ? "Re-running…" : "Re-run"}
+    </button>
   );
 }
 
