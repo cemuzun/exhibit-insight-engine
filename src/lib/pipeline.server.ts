@@ -1845,6 +1845,10 @@ ${sourceLinks.slice(0, 80).join("\n")}`,
         exhibitor_pages_parsed: counters.exhibitor_pages_parsed + 1,
         exhibitor_pages_with_hits: counters.exhibitor_pages_with_hits + (added > 0 ? 1 : 0),
         exhibitors_found: counters.exhibitors_found + added,
+        exhibitor_samples: [
+          ...pendingSamples.splice(0).reverse(),
+          ...counters.exhibitor_samples,
+        ].slice(0, 100),
         ...(added > 0
           ? { last_exhibitor_at: new Date().toISOString(), last_exhibitor_source: host }
           : {}),
