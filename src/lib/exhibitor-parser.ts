@@ -75,11 +75,10 @@ export function parseExhibitorsFromPlainList(markdown: string, max = 500): Exhib
   for (const line of raw) {
     const prev = lines[lines.length - 1];
     const isContinuation =
-      prev &&
+      !!prev &&
       prev.length > 3 &&
-      !/[.)\]]$/.test(prev) === false === false && // keep simple: judged below
-      /^(inc\.?|llc|ltd\.?|corp\.?|co\.|gmbh|s\.a\.?|b\.v\.?|ag|plc|\(|and\b|&|[a-z])/i.test(line) &&
-      line.length < 60;
+      line.length < 60 &&
+      /^(inc\.?|llc|ltd\.?|corp\.?|co\.|gmbh|s\.a\.?|b\.v\.?|ag|plc|\(|and\b|&|[a-z])/i.test(line);
     if (isContinuation) lines[lines.length - 1] = `${prev} ${line}`;
     else lines.push(line);
   }
@@ -104,10 +103,7 @@ export function parseExhibitorsFromPlainList(markdown: string, max = 500): Exhib
       category: null,
     });
   }
-  if (out.size === 0) {
-    // Plain company-per-line lists (PDF handouts, simple HTML pages).
-    for (const ex of parseExhibitorsFromPlainList(markdown, max)) addExhibitor(out, ex);
-  }
+
 
   return Array.from(out.values()).slice(0, max);
 }
