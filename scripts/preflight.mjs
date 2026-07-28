@@ -109,15 +109,33 @@ if (lock.kind && !lock.data) {
 }
 
 // ---- Environment variable checks -----------------------------------------
+// Skipped with --no-env (used by build scripts, where deploy-time secrets are
+// injected by the platform and are not present in the build environment).
+
+const flags = process.argv.slice(2);
+const skipEnv = flags.includes("--no-env") || process.env.PREFLIGHT_SKIP_ENV === "1";
+
+// Load .env (if present) so local runs see project-level variables.
+const dotenv = resolve(here, "../.env");
+if (existsSync(dotenv)) {
+  for (const line of readFileSync(dotenv, "utf8").split("\n")) {
+    const m = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/.exec(line);
+    if (!m) continue;
+    const value = m[2].replace(/^["']|["']$/g, "");
+    if (!process.env[m[1]]) process.env[m[1]] = value;
+  }
+}
 
 const envMissing = [];
 const envPresent = [];
-for (const env of REQUIRED_ENV) {
-  const value = process.env[env.name];
-  if (value && value.trim().length > 0) {
-    envPresent.push(env);
-  } else if (env.required) {
-    envMissing.push(env);
+if (!skipEnv) {
+  for (const env of REQUIRED_ENV) {
+    const value = process.env[env.name] ?? process.env[`VITE_${env.name}`];
+    if (value && value.trim().length > 0) {
+      envPresent.push(env);
+    } else if (env.required) {
+      envMissing.push(env);
+    }
   }
 }
 
@@ -125,6 +143,7 @@ for (const env of REQUIRED_ENV) {
 
 const packageOk = missing.length === 0 && pinProblems.length === 0;
 const envOk = envMissing.length === 0;
+
 
 if (packageOk && envOk) {
   console.log(`preflight: OK — all ${REQUIRED.length} required packages are installed`);
