@@ -26,6 +26,54 @@ MANDATORY RULES:
 - Score components must sum exactly to the lead_score total.
 - Personalization in outreach must use only facts actually present in the source material.`;
 
+
+type ZodLike<T> = { safeParse: (v: unknown) => { success: boolean; data?: T } };
+
+function extractJson(text: string): unknown {
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+  const candidate = (fenced ? fenced[1] : text).trim();
+  const start = candidate.search(/[{[]/);
+  if (start === -1) return null;
+  const slice = candidate.slice(start);
+  try {
+    return JSON.parse(slice);
+  } catch {
+    // Trim trailing junk after the last closing brace/bracket.
+    const end = Math.max(slice.lastIndexOf("}"), slice.lastIndexOf("]"));
+    if (end === -1) return null;
+    try {
+      return JSON.parse(slice.slice(0, end + 1));
+    } catch {
+      return null;
+    }
+  }
+}
+
+/**
+ * Structured generation that degrades instead of crashing: if the model output
+ * fails schema validation, retry parsing the raw text before giving up.
+ */
+async function generateStructured<T>(
+  model: Parameters<typeof generateText>[0]["model"],
+  schema: ZodLike<T>,
+  prompt: string,
+): Promise<T> {
+  try {
+    const { output } = await generateText({
+      model,
+      output: Output.object({ schema: schema as never }),
+      prompt,
+    });
+    return output as T;
+  } catch (e) {
+    if (NoObjectGeneratedError.isInstance(e) && e.text) {
+      const parsed = schema.safeParse(extractJson(e.text));
+      if (parsed.success && parsed.data !== undefined) return parsed.data;
+    }
+    throw e;
+  }
+}
+
 type ProgressFn = (stage: string, message: string) => Promise<void>;
 
 export async function runPipeline(
@@ -89,13 +137,8 @@ ${sourceLinks.slice(0, 80).join("\n")}`;
 
   let eventList: import("zod").infer<typeof EventListSchema>;
   try {
-    const { output } = await generateText({
-      model: extractModel,
-      output: Output.object({ schema: EventListSchema }),
-      prompt: eventListPrompt,
-    });
-    eventList = output;
-    limitations.push(...output.limitations);
+    eventList = await generateStructured(extractModel, EventListSchema, eventListPrompt);
+    limitations.push(...(eventList.limitations ?? []));
   } catch (e) {
     if (NoObjectGeneratedError.isInstance(e)) {
       limitations.push("Event extraction returned malformed output; halting.");
@@ -128,7 +171,7 @@ ${sourceLinks.slice(0, 80).join("\n")}`;
         city: e.city ?? null,
         state: e.state ?? null,
         country: e.country ?? null,
-        event_opportunity_score: e.event_opportunity_score,
+        event_opportunity_score: Math.max(0, Math.min(100, Math.round(e.event_opportunity_score))),
         recommended_outreach_phase: e.recommended_outreach_phase,
         source_urls: [input.inputUrl, e.official_url].filter(Boolean) as string[],
         raw: e,
@@ -174,16 +217,11 @@ ${exhibitorSource.slice(0, 30000)}`;
 
     let exhibitorList: import("zod").infer<typeof ExhibitorListSchema>;
     try {
-      const { output } = await generateText({
-        model: extractModel,
-        output: Output.object({ schema: ExhibitorListSchema }),
-        prompt: exhibitorPrompt,
-      });
-      exhibitorList = output;
-      if (!output.extraction_complete) {
+      exhibitorList = await generateStructured(extractModel, ExhibitorListSchema, exhibitorPrompt);
+      if (exhibitorList.extraction_complete === false) {
         limitations.push(`Exhibitor list for ${ev.event_name} is partial.`);
       }
-      limitations.push(...output.limitations);
+      limitations.push(...(exhibitorList.limitations ?? []));
     } catch (e) {
       limitations.push(`Exhibitor extraction failed for ${ev.event_name}: ${(e as Error).message}`);
       continue;
@@ -240,11 +278,7 @@ TASK:
 6. Set confidence_level based on how well-supported the record is.`;
 
       try {
-        const { output } = await generateText({
-          model: reasonModel,
-          output: Output.object({ schema: LeadSchema }),
-          prompt: leadPrompt,
-        });
+        const output = await generateStructured(reasonModel, LeadSchema, leadPrompt);
         allLeads.push({
           lead: output,
           eventId: ev.id,
@@ -275,8 +309,9 @@ TASK:
     );
 
     // Tier 1 requires a credible decision-maker path
-    const hasVerified = lead.decision_makers.some(
-      (dm) => dm.contact_confidence >= 70 && dm.evidence_status === "CONFIRMED",
+    const decisionMakers = lead.decision_makers ?? [];
+    const hasVerified = decisionMakers.some(
+      (dm) => (dm.contact_confidence ?? 0) >= 70 && dm.evidence_status === "CONFIRMED",
     );
     let tier: string;
     if (total >= 80 && hasVerified) tier = "TIER_1_IMMEDIATE";
@@ -288,31 +323,31 @@ TASK:
       run_id: runId,
       event_id: eventId,
       company_name: lead.company_name,
-      normalized_company_name: lead.normalized_company_name,
-      parent_company: lead.parent_company,
-      company_website: lead.company_website,
-      industry: lead.industry,
-      employee_range: lead.employee_range,
-      revenue_range: lead.revenue_range,
+      normalized_company_name: lead.normalized_company_name ?? lead.company_name,
+      parent_company: lead.parent_company ?? null,
+      company_website: lead.company_website ?? null,
+      industry: lead.industry ?? null,
+      employee_range: lead.employee_range ?? null,
+      revenue_range: lead.revenue_range ?? null,
       trade_show: eventName,
       event_date: eventDate,
       booth_number: boothNumber,
-      booth_type: lead.booth_type,
-      booth_size_estimate: lead.booth_size_estimate,
-      booth_analysis_confidence: lead.booth_analysis_confidence,
-      recommended_services: lead.recommended_services,
-      estimated_project_value_low: lead.estimated_project_value_low,
-      estimated_project_value_high: lead.estimated_project_value_high,
+      booth_type: lead.booth_type ?? null,
+      booth_size_estimate: lead.booth_size_estimate ?? null,
+      booth_analysis_confidence: Math.max(0, Math.min(100, Math.round(lead.booth_analysis_confidence ?? 0))),
+      recommended_services: lead.recommended_services ?? [],
+      estimated_project_value_low: Math.round(lead.estimated_project_value_low ?? 0),
+      estimated_project_value_high: Math.round(lead.estimated_project_value_high ?? 0),
       lead_score: total,
       priority_tier: tier,
       score_breakdown: b,
-      decision_makers: lead.decision_makers,
-      recommended_outreach_date: lead.recommended_outreach_date,
-      recommended_next_action: lead.recommended_next_action,
-      personalized_email: `Subject: ${lead.personalized_email_subject}\n\n${lead.personalized_email_body}`,
-      linkedin_message: lead.linkedin_message,
-      confidence_level: lead.confidence_level,
-      unknown_fields: lead.unknown_fields,
+      decision_makers: decisionMakers,
+      recommended_outreach_date: lead.recommended_outreach_date ?? null,
+      recommended_next_action: lead.recommended_next_action ?? null,
+      personalized_email: `Subject: ${lead.personalized_email_subject ?? ""}\n\n${lead.personalized_email_body ?? ""}`,
+      linkedin_message: lead.linkedin_message ?? null,
+      confidence_level: lead.confidence_level ?? "LOW",
+      unknown_fields: lead.unknown_fields ?? [],
       source_urls: [input.inputUrl],
       raw: lead,
     };
@@ -362,12 +397,7 @@ Verified decision makers: ${verifiedDMs}
 Top shows: ${eventsInDb.slice(0, 3).map((e) => e.event_name).join(", ")}
 Industries seen: ${Array.from(new Set(leadRows.map((l) => l.industry).filter(Boolean))).join(", ")}
 Limitations: ${limitations.slice(0, 10).join(" | ")}`;
-    const { output } = await generateText({
-      model: extractModel,
-      output: Output.object({ schema: ExecSummarySchema }),
-      prompt: summaryPrompt,
-    });
-    execSummary = output;
+    execSummary = await generateStructured(extractModel, ExecSummarySchema, summaryPrompt);
   } catch {
     // fall back to computed
   }
