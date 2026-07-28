@@ -1735,6 +1735,8 @@ ${sourceLinks.slice(0, 80).join("\n")}`,
     let exhibitors: ExtractedExhibitor[] = [];
     const metrics = emptyMetrics();
     const confidences: number[] = [];
+    /** Newly extracted exhibitors awaiting flush into the live preview list. */
+    const pendingSamples: typeof counters.exhibitor_samples = [];
 
     /**
      * Attach provenance, validate the evidence against the page it came from,
