@@ -110,8 +110,10 @@ export const syncRunToCrm = createServerFn({ method: "POST" })
 
           const contactId = await createContact(props);
           contactsCreated++;
+          emailCache.set(email, contactId);
           contactIds.push(contactId);
           await associateContactToCompany(contactId, companyId);
+
         }
 
         if (companyExisted && contactIds.length === 0) skipped++;
