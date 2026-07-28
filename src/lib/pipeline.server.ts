@@ -752,6 +752,10 @@ export async function runPipeline(
     limiter.onBreakerChange((event) => {
       if (event.state === "open") {
         const tick = () => {
+          if (limiter.breakerState !== "open") {
+            stopBreakerTicker();
+            return;
+          }
           const secs = Math.max(0, Math.ceil((limiter.resumeAt - Date.now()) / 1000));
           void progress(
             currentStage(),
