@@ -78,12 +78,19 @@ const HARD_REJECT_RE: RegExp[] = [
   // UI actions
   /^(add to|share|print|export|download|view|show|hide|filter|sort|apply|clear|select|search|email|call|visit|open|close|next|prev)\b/i,
   /\b(click here|read more|learn more|view details|add to planner|show specials)\b/i,
-  // Copyright / legal chrome
+  // Copyright / legal / policy chrome
   /©|\ball rights reserved\b|\bcopyright\b/i,
+  /\b(age|privacy|cookie|refund|cancellation|accessibility|data protection|health\s*(&|and)\s*safety|anti[- ]?harassment|code of conduct)\s+(policy|policies|statement|notice)\b/i,
+  /^(policies|legal|imprint|disclaimer|gdpr)\b/i,
+  // Raw markup / URLs that survived cleaning
+  /\]\(|https?:\/\/|www\./i,
+  // Visitor / registration chrome
+  /\b(register as a|registration|visitor registration|book a stand|exhibit with us|attend|get your (badge|ticket))\b/i,
   // Sentences and labels
   /[:;]$/,
   /^\W*$/,
 ];
+
 
 
 
