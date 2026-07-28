@@ -23,9 +23,9 @@ npm run dev
 
 ## Verifying required dependencies
 
-The `verify:ai` script checks that every runtime dependency required by the BoothLens AI pipeline is installed and pinned to the exact version recorded in the lockfile.
+The `verify:ai` script checks that every runtime dependency required by the BoothLens AI pipeline is installed and pinned to the exact version recorded in the lockfile, and that every required environment variable is set.
 
-Run it after cloning or whenever a build fails with a missing-module error:
+Run it after cloning, whenever a build fails with a missing-module error, or when you see a missing-variable error on startup:
 
 ```sh
 npm run verify:ai
@@ -35,8 +35,9 @@ npm run verify:ai
 
 - The package is installed in `node_modules`.
 - The installed version matches the exact version in `package.json` (and the lockfile for pinned packages).
+- Required environment variables are set and non-empty.
 
-If everything passes, you will see a list of required packages with their installed and expected versions.
+If everything passes, you will see a list of required packages with their installed and expected versions, plus a list of configured environment variables.
 
 ### Installing missing dependencies
 
@@ -62,6 +63,34 @@ You can also run the bundled helper script to install all required packages and 
 ```
 
 After installing, run `npm run verify:ai` again to confirm the environment is healthy.
+
+### Missing environment variables
+
+When `verify:ai` finds a required environment variable is missing, it prints a table of the missing variable names and what each one is used for, for example:
+
+```
+preflight: FAILED — 1 required environment variable(s) missing
+
+  VARIABLE          DESCRIPTION
+  --------          -----------
+  FIRECRAWL_API_KEY Firecrawl API key for scraping trade show directories
+
+Set the missing variables in your environment or .env file before running the app.
+For Lovable Cloud projects, these secrets are managed in Project Settings → Secrets.
+```
+
+Required variables are:
+
+- `SUPABASE_URL` — Supabase project URL
+- `SUPABASE_PUBLISHABLE_KEY` — Supabase publishable/anon key
+- `SUPABASE_SERVICE_ROLE_KEY` — Supabase service role key
+- `LOVABLE_API_KEY` — Lovable AI Gateway / connectors key
+- `FIRECRAWL_API_KEY` — Firecrawl scraping key
+
+`HUBSPOT_API_KEY` is optional and only required if you use the CRM sync feature.
+
+This project uses the Lovable AI Gateway, so `LOVABLE_API_KEY` is used instead of `OPENAI_API_KEY`.
+
 
 ## Dependency Management
 
