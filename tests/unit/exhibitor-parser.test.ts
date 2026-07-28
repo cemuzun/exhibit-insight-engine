@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseExhibitorsFromMarkdown } from "@/lib/exhibitor-parser";
+import { parseExhibitorsFromMarkdown, parseExhibitorsFromPlainList } from "@/lib/exhibitor-parser";
 
 describe("parseExhibitorsFromMarkdown", () => {
   it("extracts a MapYourShow exhibitor detail page without AI", () => {
