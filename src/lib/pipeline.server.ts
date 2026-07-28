@@ -455,7 +455,7 @@ ${sourceLinks.slice(0, 80).join("\n")}`;
 
   // Scrape top events for exhibitors
   const maxLeads = input.filters.maxLeadsPerShow ?? 10;
-  const topEvents = eventsInDb.slice(0, eventList.is_directory ? 2 : 1);
+  const topEvents = eventsInDb.slice(0, eventList.is_directory ? 4 : 1);
 
   const allLeads: Array<{ lead: LeadRecord; eventId: string; eventName: string; eventDate: string | null; boothNumber: string | null }> = [];
 
@@ -467,11 +467,19 @@ ${sourceLinks.slice(0, 80).join("\n")}`;
 
     if (eventList.is_directory && ev.official_url) {
       try {
-        const scraped = await withHeartbeat("extract_exhibitors", `Fetching event page for ${ev.event_name}`, () =>
-          firecrawlScrape(ev.official_url, { formats: ["markdown", "links"] }),
+        const found = await withHeartbeat(
+          "extract_exhibitors",
+          `Looking for the exhibitor list of ${ev.event_name}`,
+          () => findExhibitorListSource(ev.official_url, ev.event_name),
         );
-        exhibitorSource = scraped.markdown ?? "";
-        exhibitorSourceUrl = ev.official_url;
+        if (!found) {
+          limitations.push(
+            `No public exhibitor list found for ${ev.event_name} — event site did not expose an exhibitor directory.`,
+          );
+          continue;
+        }
+        exhibitorSource = found.markdown;
+        exhibitorSourceUrl = found.url;
       } catch (e) {
         limitations.push(`Could not scrape ${ev.event_name}: ${(e as Error).message}`);
         continue;
