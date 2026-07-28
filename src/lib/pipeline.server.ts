@@ -191,6 +191,22 @@ export async function runPipeline(
 
 
   const limitations: string[] = [];
+
+  // Per-run overrides on top of the env-var defaults (concurrency + rate caps).
+  const concurrency = enrichConcurrency(input.filters.concurrency);
+  if (input.filters.firecrawlConcurrency || input.filters.firecrawlRpm) {
+    firecrawlLimiter.configure({
+      ...(input.filters.firecrawlConcurrency ? { concurrency: input.filters.firecrawlConcurrency } : {}),
+      ...(input.filters.firecrawlRpm ? { requestsPerMinute: input.filters.firecrawlRpm } : {}),
+    });
+  }
+  if (input.filters.llmConcurrency || input.filters.llmRpm) {
+    llmLimiter.configure({
+      ...(input.filters.llmConcurrency ? { concurrency: input.filters.llmConcurrency } : {}),
+      ...(input.filters.llmRpm ? { requestsPerMinute: input.filters.llmRpm } : {}),
+    });
+  }
+
   const key = requireLovableKey();
   const gateway = createLovableAiGatewayProvider(key);
   const extractModel = gateway(EXTRACT_MODEL);
