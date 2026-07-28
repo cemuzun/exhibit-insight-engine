@@ -23,6 +23,7 @@ function isLikelyCompanyName(value: string): boolean {
   if (/^(download|add to planner|view details|company information|contact us|products?|videos?|show specials?|international manufacturing technology show|map your show)$/i.test(name)) {
     return false;
   }
+  if (/^(decorative|mobile app|banner|close this banner)$/i.test(name)) return false;
   if (/^(facebook|linkedin|instagram|youtube|x|twitter)$/i.test(name)) return false;
   return /[A-Za-z0-9]/.test(name);
 }
