@@ -1779,12 +1779,31 @@ ${sourceLinks.slice(0, 80).join("\n")}`,
           continue;
         }
 
+        const validation = validateExhibitorRow({
+          companyName: item.company_name,
+          boothNumber: item.booth_number,
+          profileUrl: item.profile_url,
+          companyWebsite: item.company_website,
+          sourceUrl: src.url,
+          sourceMarkdown: src.markdown,
+          evidenceText,
+        });
+        if (validation.verdict === "reject") {
+          metrics.records_rejected += 1;
+          metrics.rejection_reasons[validation.reason] = (metrics.rejection_reasons[validation.reason] ?? 0) + 1;
+          if (diag.rejected.length < 40) {
+            diag.rejected.push({ url: `${src.url} :: ${item.company_name}`, reason: validation.reason });
+          }
+          continue;
+        }
+
         const baseConfidence = method === "AI" ? 0.8 : 0.95;
-        const confidence = capConfidence(baseConfidence, method, sourceType);
+        const confidence = capConfidence(baseConfidence, method, sourceType) * validation.confidenceFactor;
         const status = confidence >= MIN_RECORD_EXTRACTION_CONFIDENCE ? "CONFIRMED" : "UNCERTAIN";
 
         const record: ExtractedExhibitor = {
           ...item,
+          booth_number: validation.boothNumber,
           source_url: src.url,
           source_type: sourceType,
           extraction_method: method,
@@ -1793,6 +1812,7 @@ ${sourceLinks.slice(0, 80).join("\n")}`,
           evidence_hash: evidenceHash(evidenceText),
           extraction_confidence: confidence,
           record_status: status,
+
           exhibitor_instance_key: exhibitorInstanceKey({
             eventId: ev.id,
             companyName: item.company_name,
