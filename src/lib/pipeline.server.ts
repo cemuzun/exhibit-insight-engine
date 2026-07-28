@@ -916,8 +916,10 @@ ${exhibitorSource.slice(0, 30000)}`;
     }
 
     const exhibitors = exhibitorList.exhibitors.slice(0, maxLeads);
+    await bumpCounters({ exhibitors_found: counters.exhibitors_found + exhibitors.length });
 
     let completed = 0;
+
 
     await mapPool(exhibitors, concurrency, async (ex) => {
       // Firecrawl search for enrichment context
