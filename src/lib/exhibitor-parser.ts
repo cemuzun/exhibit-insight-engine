@@ -156,5 +156,10 @@ export function parseExhibitorsFromMarkdown(markdown: string, sourceUrl: string,
     if (out.size >= max) return Array.from(out.values());
   }
 
+  if (out.size === 0) {
+    // Plain company-per-line lists: PDF handouts and simple HTML pages.
+    for (const ex of parseExhibitorsFromPlainList(markdown, max)) addExhibitor(out, ex);
+  }
+
   return Array.from(out.values()).slice(0, max);
 }

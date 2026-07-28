@@ -526,7 +526,11 @@ const EXHIBITOR_LINK_RE =
 
 /** Pages that mention exhibitors but never list companies. */
 const EXHIBITOR_NEGATIVE_RE =
-  /prospectus|sponsor|become[-_/]?an?[-_/]?exhibitor|why[-_/]?exhibit|faq|service[-_/]?manual|resources?|contact|pricing|rates|\.pdf($|\?)/i;
+  /prospectus|sponsor|become[-_/]?an?[-_/]?exhibitor|why[-_/]?exhibit|faq|service[-_/]?manual|resources?|contact|pricing|rates/i;
+
+/** Many associations publish the exhibitor list only as a linked PDF. */
+const PDF_RE = /\.pdf($|\?)/i;
+const EXHIBITOR_PDF_RE = /(exhibit|exhibitor|floor ?plan|booth)/i;
 
 /**
  * Directory platforms that reliably host real exhibitor lists. Many shows put
@@ -549,6 +553,7 @@ function scoreCandidate(url: string): number {
   } catch {
     /* ignore unparseable urls */
   }
+  if (PDF_RE.test(url)) score += EXHIBITOR_PDF_RE.test(url) ? 5 : -6;
   if (EXHIBITOR_NEGATIVE_RE.test(url)) score -= 5;
   return score;
 }
@@ -563,7 +568,16 @@ function looksLikeExhibitorContent(markdown: string): boolean {
   const linkLines = lines.filter((l) => /^[-*|\s]*\[?[A-Z0-9][^\n]{2,60}\]?/.test(l)).length;
   const companyish = (markdown.match(/\b(inc\.?|llc|ltd\.?|corp\.?|co\.|gmbh|group|systems|technologies|industries|equipment|solutions)\b/gi) ?? []).length;
   const boothHits = (markdown.match(/booth\s*#?\s*\w+|stand\s?#/gi) ?? []).length;
-  return boothHits >= 3 || companyish >= 8 || (companyish >= 4 && linkLines >= 20);
+  // PDF handouts are just one company per line — no links, few suffixes.
+  const bareNameLines = lines.filter((l) =>
+    /^[A-Z0-9][A-Za-z0-9&.,'’()\/-]*(\s+[A-Za-z0-9&.,'’()\/-]+){0,7}$/.test(l) && l.length <= 70,
+  ).length;
+  return (
+    boothHits >= 3 ||
+    companyish >= 8 ||
+    (companyish >= 4 && linkLines >= 20) ||
+    (bareNameLines >= 25 && companyish >= 3)
+  );
 }
 
 /**
@@ -647,6 +661,7 @@ async function findExhibitorSources(
       `${eventName} exhibitor list directory`,
       `${eventName} exhibitor directory booth numbers`,
       `10times ${eventName} exhibitors`,
+      `${eventName} exhibitor list pdf`,
     ];
     for (const q of queries) {
       if (outOfTime()) break;
@@ -664,6 +679,7 @@ async function findExhibitorSources(
     .sort((a, b) => b.score - a.score)
     .map((c) => c.url);
 
+  const secondHop: string[] = [];
   const found: Array<{ url: string; markdown: string }> = [];
   const seenFound = new Set<string>();
   const addFound = (url: string, markdown: string) => {
@@ -696,9 +712,31 @@ async function findExhibitorSources(
   for (const url of ranked.slice(0, 10)) {
     if (outOfTime() || found.length >= max) break;
     // Directory platforms render the list client-side; give them a moment.
-    const page = await firecrawlScrape(url, { formats: ["markdown"], waitFor: 4000 }).catch(() => null);
-    const md = page?.markdown ?? "";
-    addFound(url, md);
+    const isPdf = PDF_RE.test(url);
+    const page = await firecrawlScrape(
+      url,
+      isPdf
+        ? { formats: ["markdown"], parsers: ["pdf"] }
+        : { formats: ["markdown", "links"], waitFor: 4000 },
+    ).catch(() => null);
+    addFound(url, page?.markdown ?? "");
+    // Exhibitor pages often only link to the real list (commonly a PDF).
+    for (const link of page?.links ?? []) {
+      if (secondHop.length >= 6) break;
+      if (!/^https?:\/\//i.test(link) || candidates.includes(link) || secondHop.includes(link)) continue;
+      if (PDF_RE.test(link) && EXHIBITOR_PDF_RE.test(link)) secondHop.push(link);
+      else if (EXHIBITOR_LINK_RE.test(link) && scoreCandidate(link) >= 4) secondHop.push(link);
+    }
+  }
+
+  // Follow the links discovered on the exhibitor pages themselves (PDF lists).
+  for (const url of secondHop) {
+    if (outOfTime() || found.length >= max) break;
+    const page = await firecrawlScrape(
+      url,
+      PDF_RE.test(url) ? { formats: ["markdown"], parsers: ["pdf"] } : { formats: ["markdown"], waitFor: 4000 },
+    ).catch(() => null);
+    addFound(url, page?.markdown ?? "");
   }
 
   const homeMd = home?.markdown ?? "";
