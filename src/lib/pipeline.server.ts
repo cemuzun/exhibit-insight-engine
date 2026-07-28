@@ -643,36 +643,49 @@ async function findExhibitorSources(
   for (const link of home?.links ?? []) if (EXHIBITOR_LINK_RE.test(link)) push(link);
   for (const g of guessExhibitorUrls(officialUrl)) push(g);
 
-  // Aggregators + platform-hosted directories via web search.
+  // Aggregators + platform-hosted directories via web search. Search hits are
+  // the only way to reach directories on a separate host with a keyword-free
+  // path (e.g. directory.imts.com/8_0/exhview/index.cfm), so give them a base
+  // score that survives ranking instead of discarding them.
+  const searchHits = new Set<string>();
   if (!outOfTime()) {
     const queries = [
       `${eventName} exhibitor list directory`,
+      `${eventName} exhibitor directory booth numbers`,
       `10times ${eventName} exhibitors`,
     ];
     for (const q of queries) {
-      const results = await firecrawlSearch(q, { limit: 5 }).catch(() => [] as Array<{ url: string }>);
-      for (const r of results) push(r.url);
+      if (outOfTime()) break;
+      const results = await firecrawlSearch(q, { limit: 6 }).catch(() => [] as Array<{ url: string }>);
+      for (const r of results) {
+        push(r.url);
+        searchHits.add(r.url);
+      }
     }
   }
 
   const ranked = candidates
-    .map((url) => ({ url, score: scoreCandidate(url) }))
+    .map((url) => ({ url, score: scoreCandidate(url) + (searchHits.has(url) ? 1 : 0) }))
     .filter((c) => c.score > 0)
     .sort((a, b) => b.score - a.score)
     .map((c) => c.url);
 
   const found: Array<{ url: string; markdown: string }> = [];
-  for (const url of ranked.slice(0, 6)) {
+  for (const url of ranked.slice(0, 10)) {
     if (outOfTime() || found.length >= max) break;
-    const page = await firecrawlScrape(url, { formats: ["markdown"] }).catch(() => null);
+    // Directory platforms render the list client-side; give them a moment.
+    const page = await firecrawlScrape(url, { formats: ["markdown"], waitFor: 4000 }).catch(() => null);
     const md = page?.markdown ?? "";
-    if (looksLikeExhibitorContent(md)) found.push({ url, markdown: md });
+    if (looksLikeExhibitorContent(md)) found.push({ url, markdown: trimToListing(md) });
   }
 
   const homeMd = home?.markdown ?? "";
-  if (found.length === 0 && looksLikeExhibitorContent(homeMd)) found.push({ url: officialUrl, markdown: homeMd });
+  if (found.length === 0 && looksLikeExhibitorContent(homeMd)) {
+    found.push({ url: officialUrl, markdown: trimToListing(homeMd) });
+  }
   return found;
 }
+
 
 
 
