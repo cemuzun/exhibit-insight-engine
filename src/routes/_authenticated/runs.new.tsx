@@ -72,7 +72,45 @@ function NewRun() {
       <h1 className="text-2xl font-semibold tracking-tight">New research run</h1>
       <p className="mt-1 text-sm text-muted-foreground">Paste a trade show directory or event URL. We'll do the rest.</p>
 
-      <form onSubmit={onSubmit} className="mt-8 space-y-5 rounded-lg border border-border bg-card p-6">
+      <div className="mt-6 flex flex-wrap items-center gap-2 rounded-lg border border-border bg-muted/30 p-3">
+        <span className="text-xs font-medium text-muted-foreground">Preset:</span>
+        <button
+          type="button"
+          onClick={() =>
+            setForm((f) => ({
+              ...f,
+              maxEvents: 60,
+              maxDirectoryPages: 5,
+              maxDeepDiveShows: 5,
+              maxLeadsPerShow: 25,
+            }))
+          }
+          className="rounded-md border border-border bg-card px-3 py-1.5 text-xs font-medium hover:bg-accent"
+        >
+          Quick test — 5 shows
+        </button>
+        <button
+          type="button"
+          onClick={() =>
+            setForm((f) => ({
+              ...f,
+              maxEvents: 5000,
+              maxDirectoryPages: 25,
+              maxDeepDiveShows: 12,
+              maxLeadsPerShow: 0,
+            }))
+          }
+          className="rounded-md border border-border bg-card px-3 py-1.5 text-xs font-medium hover:bg-accent"
+        >
+          Full run
+        </button>
+        <span className="text-xs text-muted-foreground">
+          Quick test keeps it to 5 deep-dive shows so you can check exhibitor and lead quality fast.
+        </span>
+      </div>
+
+      <form onSubmit={onSubmit} className="mt-4 space-y-5 rounded-lg border border-border bg-card p-6">
+
         <Field label="Source URL" hint="Trade show directory, event page, or exhibitor list.">
           <input
             type="url"
