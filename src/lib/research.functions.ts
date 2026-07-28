@@ -173,16 +173,33 @@ async function failStalledRuns(supabase: {
   from: (t: string) => any;
 }): Promise<void> {
   const cutoff = new Date(Date.now() - STALL_MS).toISOString();
-  await supabase
+  const stallMessage =
+    "Run stalled — no progress for over 5 minutes. The scrape or model call likely timed out. Use Re-run to try again.";
+  const { data: stalled } = await supabase
     .from("research_runs")
-    .update({
-      status: "failed",
-      error_message:
-        "Run stalled — no progress for over 5 minutes. The scrape or model call likely timed out. Use Re-run to try again.",
-    })
+    .update({ status: "failed", error_message: stallMessage })
     .not("status", "in", "(complete,failed)")
-    .lt("updated_at", cutoff);
+    .lt("updated_at", cutoff)
+    .select("id, user_id");
+
+  // Alert the owner of each run we just auto-failed.
+  if (Array.isArray(stalled) && stalled.length > 0) {
+    try {
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      const { notifyRunFailure } = await import("./notifications.server");
+      for (const run of stalled as { id: string; user_id: string }[]) {
+        await notifyRunFailure(supabaseAdmin, {
+          runId: run.id,
+          userId: run.user_id,
+          errorMessage: stallMessage,
+        });
+      }
+    } catch {
+      // non-fatal
+    }
+  }
 }
+
 
 export const listRuns = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
