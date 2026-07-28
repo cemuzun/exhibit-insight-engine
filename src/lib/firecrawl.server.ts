@@ -147,6 +147,59 @@ export async function firecrawlScrape(
 }
 
 
+/** Free URL discovery via robots.txt / sitemap.xml (no Firecrawl credits). */
+async function sitemapUrls(url: string, limit: number, search?: string): Promise<string[]> {
+  let origin: string;
+  try {
+    origin = new URL(url).origin;
+  } catch {
+    return [];
+  }
+  const seeds = [`${origin}/sitemap.xml`, `${origin}/sitemap_index.xml`, `${origin}/sitemap-index.xml`];
+  try {
+    const robots = await fetch(`${origin}/robots.txt`, { signal: AbortSignal.timeout(8000) });
+    if (robots.ok) {
+      const txt = await robots.text();
+      for (const m of txt.matchAll(/sitemap:\s*(\S+)/gi)) seeds.push(m[1]);
+    }
+  } catch {
+    /* ignore */
+  }
+
+  const seen = new Set<string>();
+  const out = new Set<string>();
+  const queue = [...new Set(seeds)];
+  let fetched = 0;
+
+  while (queue.length && out.size < limit && fetched < 12) {
+    const sm = queue.shift()!;
+    if (seen.has(sm)) continue;
+    seen.add(sm);
+    fetched += 1;
+    let xml = "";
+    try {
+      const r = await fetch(sm, { signal: AbortSignal.timeout(10_000) });
+      if (!r.ok) continue;
+      xml = await r.text();
+    } catch {
+      continue;
+    }
+    const locs = [...xml.matchAll(/<loc>\s*([^<\s]+)\s*<\/loc>/gi)].map((m) => m[1]);
+    const isIndex = /<sitemapindex/i.test(xml);
+    for (const loc of locs) {
+      if (isIndex || /\.xml(\.gz)?$/i.test(loc)) {
+        if (queue.length < 12) queue.push(loc);
+      } else if (/^https?:\/\//i.test(loc)) {
+        if (search && !loc.toLowerCase().includes(search.toLowerCase())) continue;
+        out.add(loc);
+        if (out.size >= limit) break;
+      }
+    }
+  }
+  return [...out];
+}
+
+
 /**
  * Fast URL discovery for a site. Surfaces deep pages (and PDFs) that are never
  * linked from the event homepage — often the only path to an exhibitor list.
