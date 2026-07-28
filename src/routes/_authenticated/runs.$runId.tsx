@@ -163,8 +163,14 @@ function RunDetail() {
           message={run.progress_message ?? null}
           createdAt={run.created_at}
           updatedAt={(run as { updated_at?: string }).updated_at ?? null}
+          stepLog={((run as { step_log?: unknown }).step_log ?? []) as StepEntry[]}
         />
       )}
+
+      {!inProgress && (((run as { step_log?: unknown[] }).step_log ?? []) as StepEntry[]).length > 0 && (
+        <RunTimings stepLog={((run as { step_log?: unknown }).step_log ?? []) as StepEntry[]} />
+      )}
+
 
 
       {run.status === "failed" && (
