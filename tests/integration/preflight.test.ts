@@ -5,12 +5,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const SCRIPT_SRC = join(process.cwd(), "scripts", "preflight.mjs");
+const LIST_SRC = join(process.cwd(), "scripts", "required-packages.mjs");
 
 function scaffold(pkgs: string[]) {
   const dir = mkdtempSync(join(tmpdir(), "preflight-"));
   writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "t", version: "0.0.0" }));
   mkdirSync(join(dir, "scripts"), { recursive: true });
   cpSync(SCRIPT_SRC, join(dir, "scripts", "preflight.mjs"));
+  cpSync(LIST_SRC, join(dir, "scripts", "required-packages.mjs"));
+
   const nm = join(dir, "node_modules");
   for (const p of pkgs) {
     const target = join(nm, ...p.split("/"));
@@ -47,5 +50,40 @@ describe("preflight script (integration)", () => {
     expect(output).toMatch(/npm install/i);
     expect(output).toContain("ai");
   });
+
+  it("fails when an exact-pinned package does not match the lockfile", async () => {
+    const { REQUIRED } = await import("../../scripts/required-packages.mjs");
+    const dir = scaffold(REQUIRED);
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({ name: "t", version: "0.0.0", dependencies: { ai: "7.0.37" } }),
+    );
+    writeFileSync(
+      join(dir, "bun.lock"),
+      JSON.stringify({ lockfileVersion: 1, packages: { ai: ["ai@6.0.0", "", {}, ""] } }),
+    );
+    const res = runIn(dir);
+    expect(res.status).not.toBe(0);
+    const output = res.stdout + res.stderr;
+    expect(output).toMatch(/pin mismatch/i);
+    expect(output).toContain("6.0.0");
+  });
+
+  it("passes pin check when the lockfile matches", async () => {
+    const { REQUIRED } = await import("../../scripts/required-packages.mjs");
+    const dir = scaffold(REQUIRED);
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({ name: "t", version: "0.0.0", dependencies: { ai: "7.0.37" } }),
+    );
+    writeFileSync(
+      join(dir, "bun.lock"),
+      JSON.stringify({ lockfileVersion: 1, packages: { ai: ["ai@7.0.37", "", {}, ""] } }),
+    );
+    const res = runIn(dir);
+    expect(res.status).toBe(0);
+    expect(res.stdout).toMatch(/pinned versions match/i);
+  });
 });
+
 
