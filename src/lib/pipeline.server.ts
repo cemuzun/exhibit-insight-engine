@@ -67,9 +67,9 @@ function splitMarkdownTableRow(line: string): string[] {
 }
 
 function parseMarkdownLink(cell: string): { label: string; url: string | null } {
-  const match = cell.match(/\[([^\]]+)]\(([^)]+)\)/);
+  const match = Array.from(cell.matchAll(/(!?)\[([^\]]+)]\(([^)]+)\)/g)).find((m) => m[1] !== "!");
   if (!match) return { label: cell.replace(/<br\s*\/?>/gi, " ").trim(), url: null };
-  return { label: match[1].trim(), url: match[2].trim() };
+  return { label: match[2].trim(), url: match[3].trim() };
 }
 
 function numberFromCell(cell: string): number | null {
@@ -119,6 +119,7 @@ function extractEventsFromMarkdownDirectory(
 ): EventRecord[] {
   const events: EventRecord[] = [];
   for (const line of markdown.split("\n")) {
+    if (/show names|next dates|attendees|exhibitors/i.test(line)) continue;
     const cells = splitMarkdownTableRow(line);
     if (cells.length < 6 || !cells[0].includes("](")) continue;
     const linked = parseMarkdownLink(cells[0]);
