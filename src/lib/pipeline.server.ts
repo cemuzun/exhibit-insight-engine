@@ -1096,55 +1096,84 @@ ${sourceLinks.slice(0, 80).join("\n")}`,
     await progress("extract_exhibitors", `Extracting exhibitors from ${ev.event_name}`);
 
 
-    let exhibitorSource = sourceMarkdown;
-    let exhibitorSourceUrl = input.inputUrl;
+    let sources: Array<{ url: string; markdown: string }> = [
+      { url: input.inputUrl, markdown: sourceMarkdown },
+    ];
 
     if (eventList.is_directory && ev.official_url) {
       try {
-        const found = await withHeartbeat(
+        sources = await withHeartbeat(
           "extract_exhibitors",
           `Looking for the exhibitor list of ${ev.event_name}`,
-          () => findExhibitorListSource(ev.official_url, ev.event_name),
+          () => findExhibitorSources(ev.official_url, ev.event_name),
         );
-        if (!found) {
+        if (sources.length === 0) {
           limitations.push(
             `No public exhibitor list found for ${ev.event_name} — event site did not expose an exhibitor directory.`,
           );
+          await pushScoringEntry({
+            at: new Date().toISOString(),
+            company: "—",
+            show: ev.event_name,
+            status: "skipped",
+            reason: "Skipped — no public exhibitor list found on the event site",
+          });
+          await bumpCounters({ deep_dive_done: counters.deep_dive_done + 1 });
           continue;
         }
-        exhibitorSource = found.markdown;
-        exhibitorSourceUrl = found.url;
       } catch (e) {
         limitations.push(`Could not scrape ${ev.event_name}: ${(e as Error).message}`);
+        await bumpCounters({ deep_dive_done: counters.deep_dive_done + 1 });
         continue;
       }
     }
 
-    const exhibitorPrompt = `${CORE_SYSTEM}
+    // Try each candidate source until one actually yields exhibitors.
+    let exhibitors: import("zod").infer<typeof ExhibitorListSchema>["exhibitors"] = [];
+    for (const src of sources) {
+      const exhibitorPrompt = `${CORE_SYSTEM}
 
 TASK: Extract EXHIBITING COMPANIES from the source below for event "${ev.event_name}". Return up to ${maxLeads * 2} candidates. Skip associations, government bodies, media partners, sponsors that aren't exhibitors, universities, and service vendors that are not the trade show's own exhibitors. Normalize company names (strip Inc./LLC/etc for normalized_company_name).
 
-Source URL: ${exhibitorSourceUrl}
+Source URL: ${src.url}
 
 --- SOURCE MARKDOWN ---
-${exhibitorSource.slice(0, 30000)}`;
+${src.markdown.slice(0, 30000)}`;
 
-    let exhibitorList: import("zod").infer<typeof ExhibitorListSchema>;
-    try {
-      exhibitorList = await withHeartbeat("extract_exhibitors", `Extracting exhibitors from ${ev.event_name}`, () =>
-        generateStructured(extractModel, ExhibitorListSchema, exhibitorPrompt),
-      );
-      if (exhibitorList.extraction_complete === false) {
-        limitations.push(`Exhibitor list for ${ev.event_name} is partial.`);
+      try {
+        const exhibitorList = await withHeartbeat(
+          "extract_exhibitors",
+          `Extracting exhibitors from ${ev.event_name} (${new URL(src.url).hostname})`,
+          () => generateStructured(extractModel, ExhibitorListSchema, exhibitorPrompt),
+        );
+        if (exhibitorList.extraction_complete === false) {
+          limitations.push(`Exhibitor list for ${ev.event_name} is partial.`);
+        }
+        limitations.push(...(exhibitorList.limitations ?? []));
+        if (exhibitorList.exhibitors.length > 0) {
+          exhibitors = exhibitorList.exhibitors.slice(0, maxLeads);
+          break;
+        }
+      } catch (e) {
+        limitations.push(`Exhibitor extraction failed for ${ev.event_name}: ${(e as Error).message}`);
       }
-      limitations.push(...(exhibitorList.limitations ?? []));
-    } catch (e) {
-      limitations.push(`Exhibitor extraction failed for ${ev.event_name}: ${(e as Error).message}`);
+    }
+
+    if (exhibitors.length === 0) {
+      limitations.push(`No exhibitors could be extracted for ${ev.event_name}.`);
+      await pushScoringEntry({
+        at: new Date().toISOString(),
+        company: "—",
+        show: ev.event_name,
+        status: "skipped",
+        reason: `Skipped — no exhibitors extractable from ${sources.length} candidate page(s)`,
+      });
+      await bumpCounters({ deep_dive_done: counters.deep_dive_done + 1 });
       continue;
     }
 
-    const exhibitors = exhibitorList.exhibitors.slice(0, maxLeads);
     await bumpCounters({ exhibitors_found: counters.exhibitors_found + exhibitors.length });
+
 
     let completed = 0;
 
