@@ -1318,8 +1318,12 @@ ${sourceLinks.slice(0, 80).join("\n")}`,
 
   await admin.from("research_runs").update({ status: "analyzing" }).eq("id", runId);
 
-  // Scrape top events for exhibitors
-  const maxLeads = input.filters.maxLeadsPerShow ?? 10;
+  // Scrape top events for exhibitors.
+  // maxLeadsPerShow = 0 means "every exhibitor we can find on the show".
+  const requestedLeads = input.filters.maxLeadsPerShow ?? 10;
+  const unlimitedLeads = requestedLeads <= 0;
+  const maxLeads = unlimitedLeads ? Number.POSITIVE_INFINITY : requestedLeads;
+
   // 0 (or unset via 0) means "deep-dive every show we kept" — no cap.
   const requestedDeepDive = input.filters.maxDeepDiveShows ?? (eventList.is_directory ? 12 : 1);
   const deepDiveCount =
