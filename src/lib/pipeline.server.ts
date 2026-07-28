@@ -954,6 +954,9 @@ export async function runPipeline(
     pages_reused: 0,
     pages_fetched: 0,
     scoring_feed: [] as ScoringFeedEntry[],
+    /** Per-show extraction diagnostics shown in the run debug panel. */
+    show_debug: [] as ShowDebugEntry[],
+
   };
   const bumpCounters = async (patch: Partial<typeof counters>) => {
     Object.assign(counters, patch);
