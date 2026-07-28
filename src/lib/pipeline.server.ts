@@ -579,6 +579,23 @@ export async function runPipeline(
       .eq("id", runId);
   };
 
+  // Live counters surfaced in the run UI while the pipeline is working.
+  const counters = {
+    discovered: 0,
+    filtered_too_soon: 0,
+    eligible: 0,
+    kept: 0,
+    deep_dive_total: 0,
+    deep_dive_done: 0,
+    exhibitors_found: 0,
+    leads_scored: 0,
+  };
+  const bumpCounters = async (patch: Partial<typeof counters>) => {
+    Object.assign(counters, patch);
+    await admin.from("research_runs").update({ counters }).eq("id", runId);
+  };
+
+
   const finishSteps = async () => {
     const last = stepLog[stepLog.length - 1];
     if (last && !last.ended_at) {
