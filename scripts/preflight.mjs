@@ -24,42 +24,79 @@ const REQUIRED = [
   "@hookform/resolvers",
 ];
 
-const missing = [];
-for (const name of REQUIRED) {
+function expectedVersion(name) {
+  return pkg.dependencies?.[name] ?? pkg.devDependencies?.[name] ?? null;
+}
+
+function installedVersion(name) {
   try {
-    require.resolve(name);
+    const manifest = require.resolve(`${name}/package.json`);
+    return JSON.parse(readFileSync(manifest, "utf8")).version ?? null;
   } catch {
-    const version = pkg.dependencies?.[name] ?? pkg.devDependencies?.[name];
-    missing.push({ name, specifier: version ? `${name}@${version}` : name });
+    return null;
   }
 }
 
+const missing = [];
+const present = [];
+for (const name of REQUIRED) {
+  const expected = expectedVersion(name);
+  let resolved = true;
+  try {
+    require.resolve(name);
+  } catch {
+    resolved = false;
+  }
+  const entry = {
+    name,
+    expected,
+    installed: resolved ? installedVersion(name) : null,
+    specifier: expected ? `${name}@${expected}` : name,
+  };
+  (resolved ? present : missing).push(entry);
+}
+
+const pad = (s, n) => String(s).padEnd(n, " ");
+
 if (missing.length === 0) {
-  console.log(`preflight: OK (${REQUIRED.length} packages present)`);
+  console.log(`preflight: OK — all ${REQUIRED.length} required packages are installed`);
+  for (const p of present) {
+    console.log(`  ✓ ${pad(p.name, 28)} ${p.installed ?? "?"} (expected ${p.expected ?? "any"})`);
+  }
   process.exit(0);
 }
 
 const installArgs = missing.map((m) => m.specifier).join(" ");
-const packageManager = existsSync(resolve(here, "../bun.lockb"))
-  ? "bun"
-  : existsSync(resolve(here, "../pnpm-lock.yaml"))
-    ? "pnpm"
-    : existsSync(resolve(here, "../yarn.lock"))
-      ? "yarn"
-      : "npm";
+const packageManager =
+  existsSync(resolve(here, "../bun.lockb")) || existsSync(resolve(here, "../bun.lock"))
+    ? "bun"
+    : existsSync(resolve(here, "../pnpm-lock.yaml"))
+      ? "pnpm"
+      : existsSync(resolve(here, "../yarn.lock"))
+        ? "yarn"
+        : "npm";
 
 const commands = {
   npm: `npm install ${installArgs}`,
-  bun: `bun add ${installArgs}`,
+  bun: `bun add --exact ${installArgs}`,
   pnpm: `pnpm add ${installArgs}`,
   yarn: `yarn add ${installArgs}`,
 };
 
-console.error("Error: required packages are missing:");
-for (const m of missing) console.error(`  - ${m.name}`);
+const nameWidth = Math.max(7, ...missing.map((m) => m.name.length));
+
+console.error(
+  `preflight: FAILED — ${missing.length} of ${REQUIRED.length} required package(s) missing\n`,
+);
+console.error(`  ${pad("PACKAGE", nameWidth)}  EXPECTED VERSION`);
+console.error(`  ${pad("-".repeat(nameWidth), nameWidth)}  ----------------`);
+for (const m of missing) {
+  console.error(`  ${pad(m.name, nameWidth)}  ${m.expected ?? "(not in package.json — add it)"}`);
+}
 console.error("\nInstall the missing packages with:");
 const primary = commands[packageManager];
 const primaryNote = packageManager !== "npm" ? "  # recommended" : "";
 console.error(`  ${primary}${primaryNote}`);
 if (packageManager !== "npm") console.error(`  # or: npm install ${installArgs}`);
 process.exit(1);
+
