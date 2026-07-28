@@ -152,9 +152,16 @@ function extractEventsFromMarkdownDirectory(
     });
   }
 
-  return events
-    .sort((a, b) => b.event_opportunity_score - a.event_opportunity_score)
-    .slice(0, 15);
+  return events;
+}
+
+function dedupeEvents(events: EventRecord[]): EventRecord[] {
+  const seen = new Map<string, EventRecord>();
+  for (const e of events) {
+    const key = `${e.event_name.toLowerCase().trim()}|${(e.official_url ?? "").toLowerCase().trim()}`;
+    if (!seen.has(key)) seen.set(key, e);
+  }
+  return Array.from(seen.values());
 }
 
 function compactSourceMarkdown(markdown: string): string {
@@ -164,6 +171,72 @@ function compactSourceMarkdown(markdown: string): string {
     .join("\n")
     .slice(0, 25000);
 }
+
+/** Split long markdown into model-sized chunks so nothing is silently truncated. */
+function chunkMarkdown(markdown: string, chunkChars = 25000, maxChunks = 8): string[] {
+  const lines = markdown.split("\n").filter((line) => line.length < 4000);
+  const chunks: string[] = [];
+  let current = "";
+  for (const line of lines) {
+    if (current.length + line.length + 1 > chunkChars) {
+      chunks.push(current);
+      current = "";
+      if (chunks.length >= maxChunks) return chunks;
+    }
+    current += line + "\n";
+  }
+  if (current.trim()) chunks.push(current);
+  return chunks.slice(0, maxChunks);
+}
+
+/**
+ * Discover additional pages of a paginated directory listing, based on links
+ * found on the first page (?page=2, /page/2, ?p=2, &start=50 ...).
+ */
+function findPaginationUrls(baseUrl: string, links: string[], maxPages: number): string[] {
+  let base: URL;
+  try {
+    base = new URL(baseUrl);
+  } catch {
+    return [];
+  }
+  const basePath = base.pathname.replace(/\/page\/\d+\/?$/, "").replace(/\/$/, "");
+  const found = new Map<number, string>();
+
+  for (const raw of links) {
+    let u: URL;
+    try {
+      u = new URL(raw, baseUrl);
+    } catch {
+      continue;
+    }
+    if (u.host !== base.host) continue;
+    const path = u.pathname.replace(/\/$/, "");
+    const pathPageMatch = path.match(/^(.*)\/page\/(\d+)$/);
+    const queryPage =
+      u.searchParams.get("page") ??
+      u.searchParams.get("p") ??
+      u.searchParams.get("pg") ??
+      u.searchParams.get("pageNumber");
+
+    let n: number | null = null;
+    if (pathPageMatch && pathPageMatch[1].replace(/\/$/, "") === basePath) {
+      n = Number(pathPageMatch[2]);
+    } else if (queryPage && path === basePath) {
+      n = Number(queryPage);
+    }
+    if (n && Number.isFinite(n) && n > 1 && n <= 1000) {
+      u.hash = "";
+      if (!found.has(n)) found.set(n, u.toString());
+    }
+  }
+
+  return Array.from(found.entries())
+    .sort((a, b) => a[0] - b[0])
+    .slice(0, maxPages)
+    .map(([, url]) => url);
+}
+
 
 function fmtElapsed(ms: number): string {
   const sec = Math.max(0, Math.round(ms / 1000));
