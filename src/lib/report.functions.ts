@@ -11,6 +11,7 @@ import {
   type ReportLead,
   type ReportOutreach,
 } from "./report";
+import type { Json } from "@/integrations/supabase/types";
 
 type Row = Record<string, unknown>;
 
@@ -106,20 +107,32 @@ function toOutreach(row: Row): ReportOutreach {
   };
 }
 
-async function loadReportInput(
-  supabase: Parameters<typeof fetchAllRows>[0] extends never ? never : any,
-  runId: string,
-): Promise<ReportInput> {
+type Supa = {
+  from: (table: string) => {
+    select: (cols: string) => {
+      eq: (col: string, val: string) => {
+        range: (
+          from: number,
+          to: number,
+        ) => PromiseLike<{ data: Row[] | null; error: { message: string } | null }>;
+      };
+    };
+  };
+};
+
+async function loadReportInput(client: unknown, runId: string): Promise<ReportInput> {
+  const supabase = client as Supa;
+  const page = (table: string) => () => supabase.from(table).select("*").eq("run_id", runId);
   const [events, leads, outreach] = await Promise.all([
-    fetchAllRows(supabase, "events", "*", (q) => q.eq("run_id", runId)),
-    fetchAllRows(supabase, "leads", "*", (q) => q.eq("run_id", runId)),
-    fetchAllRows(supabase, "outreach_emails", "*", (q) => q.eq("run_id", runId)),
+    fetchAllRows<Row>(page("events")),
+    fetchAllRows<Row>(page("leads")),
+    fetchAllRows<Row>(page("outreach_emails")),
   ]);
   return {
     runId,
-    events: (events as Row[]).map(toEvent),
-    leads: (leads as Row[]).map(toLead),
-    outreach: (outreach as Row[]).map(toOutreach),
+    events: events.map(toEvent),
+    leads: leads.map(toLead),
+    outreach: outreach.map(toOutreach),
   };
 }
 
@@ -129,7 +142,7 @@ export const getRunReport = createServerFn({ method: "POST" })
   .inputValidator((input: unknown) => z.object({ runId: z.string().uuid() }).parse(input))
   .handler(async ({ data, context }) => {
     const input = await loadReportInput(context.supabase, data.runId);
-    return buildReport(input);
+    return JSON.parse(JSON.stringify(buildReport(input))) as Json;
   });
 
 /** CRM-ready JSON v2.0 for one run, validated before it is returned. */
@@ -138,5 +151,5 @@ export const getRunCrmExport = createServerFn({ method: "POST" })
   .inputValidator((input: unknown) => z.object({ runId: z.string().uuid() }).parse(input))
   .handler(async ({ data, context }) => {
     const input = await loadReportInput(context.supabase, data.runId);
-    return buildCrmExport(input);
+    return JSON.parse(JSON.stringify(buildCrmExport(input))) as Json;
   });
