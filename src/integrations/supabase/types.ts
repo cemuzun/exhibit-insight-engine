@@ -14,7 +14,266 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      events: {
+        Row: {
+          city: string | null
+          country: string | null
+          created_at: string
+          end_date: string | null
+          event_name: string
+          event_opportunity_score: number | null
+          id: string
+          industry: string | null
+          official_url: string | null
+          raw: Json | null
+          recommended_outreach_phase: string | null
+          run_id: string
+          source_urls: string[]
+          start_date: string | null
+          state: string | null
+          venue: string | null
+        }
+        Insert: {
+          city?: string | null
+          country?: string | null
+          created_at?: string
+          end_date?: string | null
+          event_name: string
+          event_opportunity_score?: number | null
+          id?: string
+          industry?: string | null
+          official_url?: string | null
+          raw?: Json | null
+          recommended_outreach_phase?: string | null
+          run_id: string
+          source_urls?: string[]
+          start_date?: string | null
+          state?: string | null
+          venue?: string | null
+        }
+        Update: {
+          city?: string | null
+          country?: string | null
+          created_at?: string
+          end_date?: string | null
+          event_name?: string
+          event_opportunity_score?: number | null
+          id?: string
+          industry?: string | null
+          official_url?: string | null
+          raw?: Json | null
+          recommended_outreach_phase?: string | null
+          run_id?: string
+          source_urls?: string[]
+          start_date?: string | null
+          state?: string | null
+          venue?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "events_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "research_runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      leads: {
+        Row: {
+          booth_analysis_confidence: number | null
+          booth_number: string | null
+          booth_size_estimate: string | null
+          booth_type: string | null
+          budget_currency: string | null
+          company_name: string
+          company_website: string | null
+          confidence_level: string | null
+          created_at: string
+          decision_makers: Json
+          employee_range: string | null
+          estimated_project_value_high: number | null
+          estimated_project_value_low: number | null
+          event_date: string | null
+          event_id: string | null
+          id: string
+          industry: string | null
+          lead_score: number
+          linkedin_message: string | null
+          normalized_company_name: string | null
+          parent_company: string | null
+          personalized_email: string | null
+          priority_tier: string | null
+          raw: Json | null
+          recommended_next_action: string | null
+          recommended_outreach_date: string | null
+          recommended_services: string[]
+          revenue_range: string | null
+          run_id: string
+          score_breakdown: Json | null
+          source_urls: string[]
+          trade_show: string | null
+          unknown_fields: string[]
+        }
+        Insert: {
+          booth_analysis_confidence?: number | null
+          booth_number?: string | null
+          booth_size_estimate?: string | null
+          booth_type?: string | null
+          budget_currency?: string | null
+          company_name: string
+          company_website?: string | null
+          confidence_level?: string | null
+          created_at?: string
+          decision_makers?: Json
+          employee_range?: string | null
+          estimated_project_value_high?: number | null
+          estimated_project_value_low?: number | null
+          event_date?: string | null
+          event_id?: string | null
+          id?: string
+          industry?: string | null
+          lead_score?: number
+          linkedin_message?: string | null
+          normalized_company_name?: string | null
+          parent_company?: string | null
+          personalized_email?: string | null
+          priority_tier?: string | null
+          raw?: Json | null
+          recommended_next_action?: string | null
+          recommended_outreach_date?: string | null
+          recommended_services?: string[]
+          revenue_range?: string | null
+          run_id: string
+          score_breakdown?: Json | null
+          source_urls?: string[]
+          trade_show?: string | null
+          unknown_fields?: string[]
+        }
+        Update: {
+          booth_analysis_confidence?: number | null
+          booth_number?: string | null
+          booth_size_estimate?: string | null
+          booth_type?: string | null
+          budget_currency?: string | null
+          company_name?: string
+          company_website?: string | null
+          confidence_level?: string | null
+          created_at?: string
+          decision_makers?: Json
+          employee_range?: string | null
+          estimated_project_value_high?: number | null
+          estimated_project_value_low?: number | null
+          event_date?: string | null
+          event_id?: string | null
+          id?: string
+          industry?: string | null
+          lead_score?: number
+          linkedin_message?: string | null
+          normalized_company_name?: string | null
+          parent_company?: string | null
+          personalized_email?: string | null
+          priority_tier?: string | null
+          raw?: Json | null
+          recommended_next_action?: string | null
+          recommended_outreach_date?: string | null
+          recommended_services?: string[]
+          revenue_range?: string | null
+          run_id?: string
+          score_breakdown?: Json | null
+          source_urls?: string[]
+          trade_show?: string | null
+          unknown_fields?: string[]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "leads_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "leads_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "research_runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profiles: {
+        Row: {
+          created_at: string
+          display_name: string | null
+          id: string
+        }
+        Insert: {
+          created_at?: string
+          display_name?: string | null
+          id: string
+        }
+        Update: {
+          created_at?: string
+          display_name?: string | null
+          id?: string
+        }
+        Relationships: []
+      }
+      research_runs: {
+        Row: {
+          completed_at: string | null
+          created_at: string
+          error_message: string | null
+          executive_summary: Json | null
+          filters: Json
+          id: string
+          input_source_type: string
+          input_url: string
+          limitations: string[]
+          progress_message: string | null
+          stage: string | null
+          status: string
+          target_market: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          completed_at?: string | null
+          created_at?: string
+          error_message?: string | null
+          executive_summary?: Json | null
+          filters?: Json
+          id?: string
+          input_source_type?: string
+          input_url: string
+          limitations?: string[]
+          progress_message?: string | null
+          stage?: string | null
+          status?: string
+          target_market?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          completed_at?: string | null
+          created_at?: string
+          error_message?: string | null
+          executive_summary?: Json | null
+          filters?: Json
+          id?: string
+          input_source_type?: string
+          input_url?: string
+          limitations?: string[]
+          progress_message?: string | null
+          stage?: string | null
+          status?: string
+          target_market?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
