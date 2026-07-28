@@ -57,7 +57,7 @@ function addExhibitor(out: Map<string, ExhibitorRecord>, exhibitor: ExhibitorRec
 }
 
 const LIST_NOISE_RE =
-  /^(as of|exhibitors?|exhibitor list|company|booth|page \d+|updated|table of contents|\d{1,4}|[a-z])\b/i;
+  /^(as of|exhibitors?|exhibitor list|company|booth|page \d+|updated|table of contents|\d{1,4})\b/i;
 
 /**
  * PDF exhibitor lists (and simple HTML lists) are just one company per line,
