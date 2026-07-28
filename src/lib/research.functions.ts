@@ -159,7 +159,7 @@ export const getRun = createServerFn({ method: "GET" })
       context.supabase.from("leads").select("*").eq("run_id", data.runId).order("lead_score", { ascending: false }),
     ]);
     if (runErr) throw new Error(runErr.message);
-    if (!run) throw new Error("Run not found");
+    if (!run) return { run: null, events: [], leads: [] };
     return { run, events: events ?? [], leads: leads ?? [] };
   });
 
