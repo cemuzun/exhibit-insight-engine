@@ -10,7 +10,7 @@ const CreateInput = z.object({
   maxLeadsPerShow: z.number().int().min(1).max(30).default(10),
   startDateFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullish(),
   startDateTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullish(),
-  maxEvents: z.number().int().min(1).max(2000).default(500),
+  maxEvents: z.number().int().min(1).max(5000).default(2000),
   maxDirectoryPages: z.number().int().min(1).max(50).default(25),
   /** Reuse directory pages fetched within this many hours (0 = always refetch). */
   pageReuseHours: z.number().int().min(0).max(720).default(24),

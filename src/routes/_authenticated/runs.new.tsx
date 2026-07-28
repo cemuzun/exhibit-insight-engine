@@ -26,7 +26,7 @@ function NewRun() {
     minLeadTimeDays: 45,
     startDateFrom: "",
     startDateTo: "",
-    maxEvents: 500,
+    maxEvents: 2000,
     maxDirectoryPages: 25,
     pageReuseHours: 24,
     maxDeepDiveShows: 12,
@@ -166,7 +166,7 @@ function NewRun() {
               min={1}
               max={2000}
               value={form.maxEvents}
-              onChange={(e) => setForm({ ...form, maxEvents: parseInt(e.target.value || "500") })}
+              onChange={(e) => setForm({ ...form, maxEvents: parseInt(e.target.value || "2000") })}
               className="w-full rounded-md border border-border bg-input px-3 py-2 text-sm font-mono"
             />
           </Field>
