@@ -88,6 +88,18 @@ export const buildOutreachQueue = createServerFn({ method: "POST" })
       (existing ?? []).map((r) => `${r.lead_id}::${(r.recipient_email ?? "").toLowerCase()}`),
     );
 
+    // Recipients already known to be bounced / complained / unsubscribed never
+    // get a new draft. The platform blocks them at send time too.
+    const { isDeliverableAddress } = await import("./suppression.server");
+    const { data: suppressedRows } = await supabase
+      .from("outreach_emails")
+      .select("recipient_email")
+      .eq("status", "suppressed");
+    const suppressedEmails = new Set(
+      (suppressedRows ?? []).map((r) => (r.recipient_email ?? "").trim().toLowerCase()),
+    );
+
+
     type InsertRow = {
       user_id: string;
       run_id: string;
@@ -174,8 +186,11 @@ export const buildOutreachQueue = createServerFn({ method: "POST" })
 
       for (const dm of contacts) {
         const email = (dm.public_business_email ?? "").trim().toLowerCase();
+        if (!isDeliverableAddress(email)) continue;
+        if (suppressedEmails.has(email)) continue;
         if (seen.has(`${lead.id}::${email}`)) continue;
         seen.add(`${lead.id}::${email}`);
+
 
         const templateLead: TemplateLead = { ...(lead as unknown as TemplateLead), decision_makers: [dm] };
         const rendered = renderForLead((templates ?? []) as EmailTemplate[], templateLead);
@@ -318,27 +333,93 @@ export const sendApprovedOutreach = createServerFn({ method: "POST" })
     if (data.ids?.length) query = query.in("id", data.ids);
     const { data: rows, error } = await query;
     if (error) throw new Error(error.message);
-    if (!rows?.length) return { sent: 0, failed: 0, pending: 0, reason: "nothing_approved" as const };
+    if (!rows?.length) return { sent: 0, failed: 0, pending: 0, skipped: 0, reason: "nothing_approved" as const };
+
+    const { isDeliverableAddress } = await import("./suppression.server");
+
+    // Locally-known bad recipients (bounced / complained / unsubscribed on a
+    // previous send) — Lovable also blocks these server-side.
+    const emails = Array.from(new Set(rows.map((r) => r.recipient_email.trim().toLowerCase())));
+    const { data: known } = await context.supabase
+      .from("outreach_emails")
+      .select("recipient_email, suppression_reason")
+      .in("recipient_email", emails)
+      .eq("status", "suppressed");
+    const suppressed = new Map<string, string>();
+    for (const k of known ?? []) {
+      suppressed.set(k.recipient_email.trim().toLowerCase(), k.suppression_reason ?? "recipient_suppressed");
+    }
 
     const sender = await import("./outreach-send.server");
     const ready = await sender.senderReady();
     if (!ready.ready) {
-      return { sent: 0, failed: 0, pending: rows.length, reason: ready.reason };
+      return { sent: 0, failed: 0, pending: rows.length, skipped: 0, reason: ready.reason };
     }
 
     let sent = 0;
     let failed = 0;
+    let skipped = 0;
+    const now = () => new Date().toISOString();
+
     for (const row of rows) {
+      const email = row.recipient_email.trim().toLowerCase();
+
+      if (!isDeliverableAddress(email)) {
+        skipped += 1;
+        await context.supabase
+          .from("outreach_emails")
+          .update({
+            status: "suppressed",
+            suppression_reason: "invalid_recipient",
+            suppressed_at: now(),
+            error: "Recipient address is not deliverable",
+          })
+          .eq("id", row.id);
+        continue;
+      }
+
+      const reason = suppressed.get(email);
+      if (reason) {
+        skipped += 1;
+        await context.supabase
+          .from("outreach_emails")
+          .update({
+            status: "suppressed",
+            suppression_reason: reason,
+            suppressed_at: now(),
+            error: `Recipient ${reason.replace(/_/g, " ")}`,
+          })
+          .eq("id", row.id);
+        continue;
+      }
+
       try {
-        await sender.sendOutreachEmail({
+        const result = await sender.sendOutreachEmail({
           to: row.recipient_email,
           subject: row.subject,
           body: row.body,
           idempotencyKey: `outreach-${row.id}`,
         });
+
+        if (!result.sent) {
+          // Blocked server-side by the suppression list — expected, not an error.
+          skipped += 1;
+          suppressed.set(email, result.reason ?? "recipient_suppressed");
+          await context.supabase
+            .from("outreach_emails")
+            .update({
+              status: "suppressed",
+              suppression_reason: result.reason ?? "recipient_suppressed",
+              suppressed_at: now(),
+              error: "Recipient is on the suppression list",
+            })
+            .eq("id", row.id);
+          continue;
+        }
+
         await context.supabase
           .from("outreach_emails")
-          .update({ status: "sent", sent_at: new Date().toISOString(), error: null })
+          .update({ status: "sent", sent_at: now(), error: null })
           .eq("id", row.id);
         sent += 1;
       } catch (e) {
@@ -349,5 +430,6 @@ export const sendApprovedOutreach = createServerFn({ method: "POST" })
           .eq("id", row.id);
       }
     }
-    return { sent, failed, pending: 0, reason: "ok" as const };
+    return { sent, failed, pending: 0, skipped, reason: "ok" as const };
   });
+

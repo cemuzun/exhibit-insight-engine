@@ -525,6 +525,8 @@ export type Database = {
           service_offered: string | null
           status: string
           subject: string
+          suppressed_at: string | null
+          suppression_reason: string | null
           template_name: string | null
           updated_at: string
           user_id: string
@@ -553,6 +555,8 @@ export type Database = {
           service_offered?: string | null
           status?: string
           subject?: string
+          suppressed_at?: string | null
+          suppression_reason?: string | null
           template_name?: string | null
           updated_at?: string
           user_id: string
@@ -581,6 +585,8 @@ export type Database = {
           service_offered?: string | null
           status?: string
           subject?: string
+          suppressed_at?: string | null
+          suppression_reason?: string | null
           template_name?: string | null
           updated_at?: string
           user_id?: string

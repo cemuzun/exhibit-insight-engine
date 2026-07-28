@@ -15,6 +15,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedTemplatesRouteImport } from './routes/_authenticated/templates'
 import { Route as AuthenticatedDigestsRouteImport } from './routes/_authenticated/digests'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
+import { Route as LovableEmailEventsRouteImport } from './routes/lovable/email/events'
 import { Route as AuthenticatedSettingsScoringRouteImport } from './routes/_authenticated/settings.scoring'
 import { Route as AuthenticatedRunsNewRouteImport } from './routes/_authenticated/runs.new'
 import { Route as AuthenticatedRunsRunIdRouteImport } from './routes/_authenticated/runs.$runId'
@@ -49,6 +50,11 @@ const AuthenticatedDashboardRoute = AuthenticatedDashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
   getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const LovableEmailEventsRoute = LovableEmailEventsRouteImport.update({
+  id: '/lovable/email/events',
+  path: '/lovable/email/events',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const AuthenticatedSettingsScoringRoute =
   AuthenticatedSettingsScoringRouteImport.update({
@@ -89,6 +95,7 @@ export interface FileRoutesByFullPath {
   '/runs/$runId': typeof AuthenticatedRunsRunIdRouteWithChildren
   '/runs/new': typeof AuthenticatedRunsNewRoute
   '/settings/scoring': typeof AuthenticatedSettingsScoringRoute
+  '/lovable/email/events': typeof LovableEmailEventsRoute
   '/runs/$runId/activity': typeof AuthenticatedRunsRunIdActivityRoute
 }
 export interface FileRoutesByTo {
@@ -101,6 +108,7 @@ export interface FileRoutesByTo {
   '/runs/$runId': typeof AuthenticatedRunsRunIdRouteWithChildren
   '/runs/new': typeof AuthenticatedRunsNewRoute
   '/settings/scoring': typeof AuthenticatedSettingsScoringRoute
+  '/lovable/email/events': typeof LovableEmailEventsRoute
   '/runs/$runId/activity': typeof AuthenticatedRunsRunIdActivityRoute
 }
 export interface FileRoutesById {
@@ -115,6 +123,7 @@ export interface FileRoutesById {
   '/_authenticated/runs/$runId': typeof AuthenticatedRunsRunIdRouteWithChildren
   '/_authenticated/runs/new': typeof AuthenticatedRunsNewRoute
   '/_authenticated/settings/scoring': typeof AuthenticatedSettingsScoringRoute
+  '/lovable/email/events': typeof LovableEmailEventsRoute
   '/_authenticated/runs/$runId/activity': typeof AuthenticatedRunsRunIdActivityRoute
 }
 export interface FileRouteTypes {
@@ -129,6 +138,7 @@ export interface FileRouteTypes {
     | '/runs/$runId'
     | '/runs/new'
     | '/settings/scoring'
+    | '/lovable/email/events'
     | '/runs/$runId/activity'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -141,6 +151,7 @@ export interface FileRouteTypes {
     | '/runs/$runId'
     | '/runs/new'
     | '/settings/scoring'
+    | '/lovable/email/events'
     | '/runs/$runId/activity'
   id:
     | '__root__'
@@ -154,6 +165,7 @@ export interface FileRouteTypes {
     | '/_authenticated/runs/$runId'
     | '/_authenticated/runs/new'
     | '/_authenticated/settings/scoring'
+    | '/lovable/email/events'
     | '/_authenticated/runs/$runId/activity'
   fileRoutesById: FileRoutesById
 }
@@ -161,6 +173,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
   AuthRoute: typeof AuthRoute
+  LovableEmailEventsRoute: typeof LovableEmailEventsRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -206,6 +219,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/dashboard'
       preLoaderRoute: typeof AuthenticatedDashboardRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/lovable/email/events': {
+      id: '/lovable/email/events'
+      path: '/lovable/email/events'
+      fullPath: '/lovable/email/events'
+      preLoaderRoute: typeof LovableEmailEventsRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/_authenticated/settings/scoring': {
       id: '/_authenticated/settings/scoring'
@@ -286,6 +306,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
   AuthRoute: AuthRoute,
+  LovableEmailEventsRoute: LovableEmailEventsRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -32,6 +32,7 @@ const STATUS_STYLES: Record<string, string> = {
   approved: "bg-primary/15 text-primary",
   sent: "bg-emerald-500/15 text-emerald-500",
   failed: "bg-destructive/15 text-destructive",
+  suppressed: "bg-amber-500/15 text-amber-600",
 };
 
 function OutreachQueue() {
@@ -44,7 +45,7 @@ function OutreachQueue() {
   const bulk = useServerFn(setOutreachStatusBulk);
   const send = useServerFn(sendApprovedOutreach);
 
-  const [filter, setFilter] = useState<"all" | "draft" | "approved" | "sent" | "failed">("all");
+  const [filter, setFilter] = useState<"all" | "draft" | "approved" | "sent" | "failed" | "suppressed">("all");
   const [openId, setOpenId] = useState<string | null>(null);
   const [edit, setEdit] = useState<{ subject: string; body: string } | null>(null);
 
@@ -76,7 +77,10 @@ function OutreachQueue() {
       } else if (r.reason === "nothing_approved") {
         toast.message("No approved drafts to send yet.");
       } else {
-        toast.success(`${r.sent} sent · ${r.failed} failed`);
+        toast.success(
+          `${r.sent} sent · ${r.failed} failed` +
+            (r.skipped ? ` · ${r.skipped} skipped (bounced/unsubscribed)` : ""),
+        );
       }
       invalidate();
     },
@@ -84,7 +88,7 @@ function OutreachQueue() {
   });
 
   const counts = useMemo(() => {
-    const c = { all: rows.length, draft: 0, approved: 0, sent: 0, failed: 0 } as Record<string, number>;
+    const c = { all: rows.length, draft: 0, approved: 0, sent: 0, failed: 0, suppressed: 0 } as Record<string, number>;
     for (const r of rows) c[r.status] = (c[r.status] ?? 0) + 1;
     return c;
   }, [rows]);
@@ -143,7 +147,7 @@ function OutreachQueue() {
       </div>
 
       <div className="mt-5 flex flex-wrap gap-2">
-        {(["all", "draft", "approved", "sent", "failed"] as const).map((k) => (
+        {(["all", "draft", "approved", "sent", "failed", "suppressed"] as const).map((k) => (
           <button
             key={k}
             onClick={() => setFilter(k)}

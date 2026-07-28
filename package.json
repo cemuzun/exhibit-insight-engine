@@ -13,7 +13,6 @@
     "dev": "npm run verify:ai:deps -- --no-env && vite dev",
     "build": "npm run verify:ai:deps -- --no-env && vite build",
     "build:dev": "npm run verify:ai:deps -- --no-env && vite build --mode development",
-
     "preview": "vite preview",
     "lint": "eslint .",
     "format": "prettier --write .",
@@ -26,6 +25,7 @@
     "@ai-sdk/openai-compatible": "3.0.14",
     "@hookform/resolvers": "^5.2.2",
     "@lovable.dev/cloud-auth-js": "^1.1.2",
+    "@lovable.dev/email-js": "0.1.0",
     "@radix-ui/react-accordion": "^1.2.12",
     "@radix-ui/react-alert-dialog": "^1.1.15",
     "@radix-ui/react-aspect-ratio": "^1.1.8",
