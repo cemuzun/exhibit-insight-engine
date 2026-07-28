@@ -589,11 +589,19 @@ export async function runPipeline(
     deep_dive_done: 0,
     exhibitors_found: 0,
     leads_scored: 0,
+    scoring_feed: [] as ScoringFeedEntry[],
   };
   const bumpCounters = async (patch: Partial<typeof counters>) => {
     Object.assign(counters, patch);
     await admin.from("research_runs").update({ counters }).eq("id", runId);
   };
+
+  /** Push a live scoring decision (kept or skipped) onto the run feed. */
+  const pushScoringEntry = async (entry: ScoringFeedEntry) => {
+    counters.scoring_feed = [entry, ...counters.scoring_feed].slice(0, 40);
+    await admin.from("research_runs").update({ counters }).eq("id", runId);
+  };
+
 
 
   const finishSteps = async () => {
