@@ -128,3 +128,13 @@ jobs:
         run: bun run typecheck
       - name: Production build
         run: bun run build
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-build-${{ github.sha }}
+          path: |
+            dist
+            .output
+            build
+          if-no-files-found: warn
+          retention-days: 14
