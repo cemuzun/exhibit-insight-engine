@@ -661,6 +661,26 @@ export async function runPipeline(
     await admin.from("research_runs").update({ counters }).eq("id", runId);
   };
 
+  // Alert the run owner when qualified leads (score 65+) cross a milestone.
+  let qualifiedCount = 0;
+  const announceMilestone = async (before: number, after: number) => {
+    try {
+      const { crossedMilestone, notifyLeadMilestone, runOwner } = await import("./notifications.server");
+      const milestone = crossedMilestone(before, after);
+      if (!milestone) return;
+      const { userId, inputUrl } = await runOwner(admin, runId);
+      if (!userId) return;
+      await notifyLeadMilestone(admin, {
+        runId,
+        userId,
+        inputUrl: inputUrl ?? input.inputUrl,
+        milestone,
+        qualified: after,
+      });
+    } catch {
+      // notifications must never break the run
+    }
+  };
 
 
   const finishSteps = async () => {
