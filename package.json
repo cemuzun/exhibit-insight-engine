@@ -4,10 +4,10 @@
   "sideEffects": false,
   "type": "module",
   "scripts": {
-    "preflight": "node scripts/preflight.mjs",
-    "dev": "vite dev",
-    "build": "vite build",
-    "build:dev": "vite build --mode development",
+    "verify:ai": "node scripts/preflight.mjs",
+    "dev": "npm run verify:ai && vite dev",
+    "build": "npm run verify:ai && vite build",
+    "build:dev": "npm run verify:ai && vite build --mode development",
     "preview": "vite preview",
     "lint": "eslint .",
     "format": "prettier --write ."
