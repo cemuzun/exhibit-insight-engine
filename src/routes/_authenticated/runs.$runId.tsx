@@ -8,6 +8,14 @@ import { syncRunToCrm } from "@/lib/crm.functions";
 import { CrmSyncPreview } from "@/components/CrmSyncPreview";
 import { RunProgress, RunTimings, type StepEntry, type RunCounters } from "@/components/RunProgress";
 import { ScoringFeed, type ScoringFeedEntry } from "@/components/ScoringFeed";
+import {
+  ResultFilters,
+  DEFAULT_FILTERS,
+  filterLeads,
+  industryOptions,
+  parseShowDate,
+  type ResultFilterState,
+} from "@/components/ResultFilters";
 
 import { listEmailTemplates } from "@/lib/templates.functions";
 import { renderForLead, type EmailTemplate } from "@/lib/email-template-engine";
@@ -74,6 +82,7 @@ function RunDetail() {
   const get = useServerFn(getRun);
   const [mode, setMode] = useState<"dashboard" | "report">("dashboard");
   const [selected, setSelected] = useState<Lead | null>(null);
+  const [filters, setFilters] = useState<ResultFilterState>(DEFAULT_FILTERS);
 
   const queryClient = useQueryClient();
   const { data, isLoading } = useQuery({
@@ -128,7 +137,19 @@ function RunDetail() {
   }
 
   const { run, events, leads } = data;
-  const typedLeads = leads as unknown as Lead[];
+  const allLeads = leads as unknown as Lead[];
+  // Filters run on the client so results keep narrowing live as rows stream in.
+  const typedLeads = filterLeads(allLeads, filters);
+  const industries = industryOptions(allLeads);
+  const windowDays = filters.window === "all" ? null : Number(filters.window);
+  const visibleEvents = events.filter((e) => {
+    if (filters.industry !== "all" && ((e as { industry?: string | null }).industry ?? "Unspecified") !== filters.industry) return false;
+    if (windowDays == null) return true;
+    const d = parseShowDate(e.start_date);
+    if (!d) return false;
+    const diff = (d.getTime() - Date.now()) / 86_400_000;
+    return diff >= -1 && diff <= windowDays;
+  });
   const es = (run.executive_summary ?? null) as {
     shows_reviewed?: number;
     exhibitors_identified?: number;
@@ -205,10 +226,18 @@ function RunDetail() {
         </div>
       )}
 
+      <ResultFilters
+        value={filters}
+        onChange={setFilters}
+        industries={industries}
+        shown={typedLeads.length}
+        total={allLeads.length}
+      />
+
       {mode === "dashboard" ? (
-        <DashboardView run={run} events={events} leads={typedLeads} es={es} onSelect={setSelected} />
+        <DashboardView run={run} events={visibleEvents} leads={typedLeads} es={es} onSelect={setSelected} />
       ) : (
-        <ReportView run={run} events={events} leads={typedLeads} es={es} />
+        <ReportView run={run} events={visibleEvents} leads={typedLeads} es={es} />
       )}
 
       {selected && <LeadDrawer lead={selected} onClose={() => setSelected(null)} />}
