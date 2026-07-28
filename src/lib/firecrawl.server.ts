@@ -1,9 +1,44 @@
+import { firecrawlLimiter, guarded, RateLimitError } from "./rate-limit.server";
+
 const FIRECRAWL_V2 = "https://api.firecrawl.dev/v2";
 
 function key(): string {
   const k = process.env.FIRECRAWL_API_KEY;
   if (!k) throw new Error("FIRECRAWL_API_KEY not configured");
   return k;
+}
+
+function parseRetryAfter(res: Response): number | undefined {
+  const h = res.headers.get("retry-after");
+  if (!h) return undefined;
+  const secs = Number(h);
+  if (Number.isFinite(secs)) return secs * 1000;
+  const date = Date.parse(h);
+  return Number.isFinite(date) ? Math.max(0, date - Date.now()) : undefined;
+}
+
+async function firecrawlPost<T>(path: string, payload: unknown, label: string): Promise<T> {
+  return guarded(
+    firecrawlLimiter,
+    async () => {
+      const res = await fetch(`${FIRECRAWL_V2}${path}`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${key()}`, "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const body = await res.json().catch(() => null);
+      if (!res.ok) {
+        const detail = JSON.stringify(body)?.slice(0, 300);
+        throw new RateLimitError(
+          `Firecrawl ${label} ${res.status}: ${detail}`,
+          res.status,
+          parseRetryAfter(res),
+        );
+      }
+      return body as T;
+    },
+    { label: `firecrawl ${label}` },
+  );
 }
 
 type ScrapeResult = {
@@ -17,39 +52,40 @@ export async function firecrawlScrape(
   url: string,
   opts?: { formats?: string[]; onlyMainContent?: boolean; waitFor?: number },
 ): Promise<ScrapeResult> {
-  const res = await fetch(`${FIRECRAWL_V2}/scrape`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${key()}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
+  const body = await firecrawlPost<({ data?: ScrapeResult } & ScrapeResult) | null>(
+    "/scrape",
+    {
       url,
       formats: opts?.formats ?? ["markdown", "links"],
       onlyMainContent: opts?.onlyMainContent ?? true,
       waitFor: opts?.waitFor,
-    }),
-  });
-  const body = await res.json().catch(() => null);
-  if (!res.ok) throw new Error(`Firecrawl scrape ${res.status}: ${JSON.stringify(body)?.slice(0, 300)}`);
+    },
+    "scrape",
+  );
+  const b = body ?? {};
   // v2 sometimes nests under data
-  const b = body as { data?: ScrapeResult } & ScrapeResult;
-  return { markdown: b.markdown ?? b.data?.markdown, html: b.html ?? b.data?.html, links: b.links ?? b.data?.links, metadata: b.metadata ?? b.data?.metadata };
+  return {
+    markdown: b.markdown ?? b.data?.markdown,
+    html: b.html ?? b.data?.html,
+    links: b.links ?? b.data?.links,
+    metadata: b.metadata ?? b.data?.metadata,
+  };
 }
 
 export async function firecrawlSearch(
   query: string,
   opts?: { limit?: number; scrapeMarkdown?: boolean },
 ): Promise<Array<{ url: string; title?: string; description?: string; markdown?: string }>> {
-  const res = await fetch(`${FIRECRAWL_V2}/search`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${key()}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
+  const body = await firecrawlPost<{ data?: unknown; web?: unknown } | null>(
+    "/search",
+    {
       query,
       limit: opts?.limit ?? 5,
       scrapeOptions: opts?.scrapeMarkdown ? { formats: ["markdown"] } : undefined,
-    }),
-  });
-  const body = await res.json().catch(() => null);
-  if (!res.ok) throw new Error(`Firecrawl search ${res.status}: ${JSON.stringify(body)?.slice(0, 300)}`);
-  const b = body as { data?: unknown; web?: unknown };
+    },
+    "search",
+  );
+  const b = body ?? {};
   const arr = (Array.isArray(b.data) ? b.data : Array.isArray(b.web) ? b.web : []) as Array<{
     url: string;
     title?: string;
