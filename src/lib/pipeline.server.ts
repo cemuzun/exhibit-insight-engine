@@ -669,8 +669,9 @@ export function parseExhibitorsFromMarkdown(markdown: string, sourceUrl: string,
     }
   }
 
-  // Listing pages usually link each company to an exhibitor detail page.
-  for (const match of markdown.matchAll(/\[([^\]\n]{2,100})\]\((https?:\/\/[^)\s"]*exhibitor-details\.cfm[^)\s"]*)/gi)) {
+  // Listing pages usually link each company to an exhibitor detail page. Links
+  // may be absolute or relative on MapYourShow pages.
+  for (const match of markdown.matchAll(/(?<!!)\[([^\]\n]{2,100})\]\(([^)\s"]*exhibitor-details\.cfm[^)\s"]*)/gi)) {
     addExhibitor(out, {
       company_name: match[1],
       normalized_company_name: match[1],
@@ -737,7 +738,7 @@ function guessExhibitorUrls(officialUrl: string): string[] {
 async function findExhibitorSources(
   officialUrl: string,
   eventName: string,
-  max = 3,
+  max = 12,
 ): Promise<Array<{ url: string; markdown: string }>> {
   // Each scrape can take up to 90s; chained together a single dead event site
   // could eat the whole run. Give the hunt one overall budget and move on.
@@ -1306,7 +1307,7 @@ ${sourceLinks.slice(0, 80).join("\n")}`,
         sources = await withHeartbeat(
           "extract_exhibitors",
           `Looking for the exhibitor list of ${ev.event_name}`,
-          () => findExhibitorSources(ev.official_url, ev.event_name),
+          () => findExhibitorSources(ev.official_url, ev.event_name, Math.max(maxLeads, 12)),
         );
         if (sources.length === 0) {
           limitations.push(
