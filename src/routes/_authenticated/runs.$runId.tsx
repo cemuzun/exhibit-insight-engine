@@ -8,6 +8,8 @@ import { syncRunToCrm } from "@/lib/crm.functions";
 import { CrmSyncPreview } from "@/components/CrmSyncPreview";
 import { RunProgress, RunTimings, type StepEntry, type RunCounters } from "@/components/RunProgress";
 import { ScoringFeed, type ScoringFeedEntry } from "@/components/ScoringFeed";
+import { DebugPanel, type ShowDebugEntry } from "@/components/DebugPanel";
+
 import { ExhibitorsTable, type ExhibitorRow } from "@/components/ExhibitorsTable";
 import {
   ResultFilters,
