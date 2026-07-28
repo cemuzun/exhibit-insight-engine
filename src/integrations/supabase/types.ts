@@ -14,6 +14,54 @@ export type Database = {
   }
   public: {
     Tables: {
+      digest_schedules: {
+        Row: {
+          created_at: string
+          days_of_week: number[]
+          enabled: boolean
+          hour_of_day: number
+          id: string
+          last_sent_at: string | null
+          min_lead_score: number
+          name: string
+          only_tier_1: boolean
+          recipient_email: string
+          timezone: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          days_of_week?: number[]
+          enabled?: boolean
+          hour_of_day?: number
+          id?: string
+          last_sent_at?: string | null
+          min_lead_score?: number
+          name?: string
+          only_tier_1?: boolean
+          recipient_email: string
+          timezone?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          days_of_week?: number[]
+          enabled?: boolean
+          hour_of_day?: number
+          id?: string
+          last_sent_at?: string | null
+          min_lead_score?: number
+          name?: string
+          only_tier_1?: boolean
+          recipient_email?: string
+          timezone?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       email_templates: {
         Row: {
           body_template: string
