@@ -21,7 +21,50 @@ npm i
 npm run dev
 ```
 
+## Verifying required dependencies
+
+The `verify:ai` script checks that every runtime dependency required by the BoothLens AI pipeline is installed and pinned to the exact version recorded in the lockfile.
+
+Run it after cloning or whenever a build fails with a missing-module error:
+
+```sh
+npm run verify:ai
+```
+
+### What the script checks
+
+- The package is installed in `node_modules`.
+- The installed version matches the exact version in `package.json` (and the lockfile for pinned packages).
+
+If everything passes, you will see a list of required packages with their installed and expected versions.
+
+### Installing missing dependencies
+
+When `verify:ai` finds missing or mismatched packages, it prints two things:
+
+1. A table of each missing package and the expected version.
+2. A package-manager-specific install command, for example:
+
+   ```sh
+   bun add --exact ai@7.0.37 @ai-sdk/openai-compatible@3.0.14
+   ```
+
+   Or, if you prefer npm:
+
+   ```sh
+   npm install --save-exact ai@7.0.37 @ai-sdk/openai-compatible@3.0.14
+   ```
+
+You can also run the bundled helper script to install all required packages and re-verify them in one step:
+
+```sh
+./scripts/install-required.sh
+```
+
+After installing, run `npm run verify:ai` again to confirm the environment is healthy.
+
 ## Dependency Management
+
 
 This repository uses [Renovate](https://docs.renovatebot.com/) to manage dependency updates. The `ai` and `@ai-sdk/openai-compatible` packages are intentionally pinned and excluded from automatic version bump PRs because they are tightly coupled to the Vercel AI SDK and the Lovable AI Gateway runtime.
 
