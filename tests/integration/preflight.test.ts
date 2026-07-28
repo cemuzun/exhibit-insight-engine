@@ -106,9 +106,9 @@ describe("preflight script (integration)", () => {
       join(dir, "bun.lock"),
       JSON.stringify({ lockfileVersion: 1, packages: { ai: ["ai@7.0.37", "", {}, ""] } }),
     );
-    const envWithoutFirecrawl = { ...envWithAll };
-    delete envWithoutFirecrawl.FIRECRAWL_API_KEY;
+    const envWithoutFirecrawl = { ...envWithAll, FIRECRAWL_API_KEY: "" };
     const res = runIn(dir, envWithoutFirecrawl);
+
     expect(res.status).not.toBe(0);
     const output = res.stdout + res.stderr;
     expect(output).toMatch(/environment variable\(s\) missing/i);
