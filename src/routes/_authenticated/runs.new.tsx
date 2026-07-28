@@ -22,7 +22,7 @@ function NewRun() {
     inputSourceType: "directory" as "directory" | "event" | "exhibitor_list",
     targetMarket: "United States",
     minProjectValue: 25000,
-    maxLeadsPerShow: 10,
+    maxLeadsPerShow: 0,
     minLeadTimeDays: 45,
     startDateFrom: "",
     startDateTo: "",
@@ -115,13 +115,15 @@ function NewRun() {
               className="w-full rounded-md border border-border bg-input px-3 py-2 text-sm font-mono"
             />
           </Field>
-          <Field label="Max leads per show">
+          <Field label="Max exhibitors per show" hint="0 = every exhibitor found on the show.">
             <input
               type="number"
-              min={1}
-              max={30}
+              min={0}
+              max={2000}
               value={form.maxLeadsPerShow}
-              onChange={(e) => setForm({ ...form, maxLeadsPerShow: parseInt(e.target.value || "10") })}
+              onChange={(e) =>
+                setForm({ ...form, maxLeadsPerShow: Math.max(0, parseInt(e.target.value || "0")) })
+              }
               className="w-full rounded-md border border-border bg-input px-3 py-2 text-sm font-mono"
             />
           </Field>

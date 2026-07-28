@@ -641,9 +641,14 @@ async function findExhibitorSources(
   eventName: string,
   max = 12,
 ): Promise<Array<{ url: string; markdown: string }>> {
+  // max <= 0 means "collect every exhibitor page we can find" for this show.
+  const exhaustive = max <= 0;
+  const limit = exhaustive ? Number.POSITIVE_INFINITY : max;
   // Each scrape can take up to 90s; chained together a single dead event site
   // could eat the whole run. Give the hunt one overall budget and move on.
-  const budgetMs = Number(process.env.EXHIBITOR_SOURCE_BUDGET_MS ?? 150_000);
+  const budgetMs = Number(
+    process.env.EXHIBITOR_SOURCE_BUDGET_MS ?? (exhaustive ? 420_000 : 150_000),
+  );
   const deadline = Date.now() + budgetMs;
   const outOfTime = () => Date.now() >= deadline;
 
@@ -670,6 +675,9 @@ async function findExhibitorSources(
       `${eventName} exhibitor directory booth numbers`,
       `10times ${eventName} exhibitors`,
       `${eventName} exhibitor list pdf`,
+      ...(exhaustive
+        ? [`${eventName} exhibitors A-Z`, `${eventName} exhibitor floor plan companies`]
+        : []),
     ];
     for (const q of queries) {
       if (outOfTime()) break;
@@ -686,8 +694,12 @@ async function findExhibitorSources(
   if (!outOfTime()) {
     try {
       const origin = new URL(officialUrl).origin;
-      for (const term of ["exhibitor list", "exhibitors"]) {
-        const mapped = await firecrawlMap(origin, { search: term, limit: 60 });
+      const terms = exhaustive
+        ? ["exhibitor list", "exhibitors", "exhibitor directory", "booth", "exhibit"]
+        : ["exhibitor list", "exhibitors"];
+      for (const term of terms) {
+        if (outOfTime()) break;
+        const mapped = await firecrawlMap(origin, { search: term, limit: exhaustive ? 200 : 60 });
         for (const u of mapped) if (scoreCandidate(u) > 0) push(u);
       }
     } catch {
@@ -702,6 +714,7 @@ async function findExhibitorSources(
     .map((c) => c.url);
 
   const secondHop: string[] = [];
+  const secondHopCap = exhaustive ? 60 : 6;
   const found: Array<{ url: string; markdown: string }> = [];
   const seenFound = new Set<string>();
   const addFound = (url: string, markdown: string) => {
@@ -723,16 +736,31 @@ async function findExhibitorSources(
     }
   }
   for (const host of cachedHosts) {
-    if (found.length >= max) break;
-    const cached = await recentCachedScrapesForHost(host, { limit: max });
+    if (found.length >= limit) break;
+    const cached = await recentCachedScrapesForHost(host, {
+      limit: exhaustive ? 500 : max,
+    });
     for (const page of cached) {
       addFound(page.url, page.markdown);
-      if (found.length >= max) break;
+      if (found.length >= limit) break;
     }
   }
 
-  for (const url of ranked.slice(0, 10)) {
-    if (outOfTime() || found.length >= max) break;
+  const collectHops = (pageUrl: string, links: string[]) => {
+    for (const link of links) {
+      if (secondHop.length >= secondHopCap) break;
+      if (!/^https?:\/\//i.test(link) || candidates.includes(link) || secondHop.includes(link)) continue;
+      if (PDF_RE.test(link) && EXHIBITOR_PDF_RE.test(link)) secondHop.push(link);
+      else if (EXHIBITOR_LINK_RE.test(link) && scoreCandidate(link) >= 4) secondHop.push(link);
+      // Exhibitor lists are usually paginated or split A-Z. Follow every page of
+      // the same listing so we get all exhibitors, not just the first screen.
+      else if (exhaustive && isSameListingPage(pageUrl, link)) secondHop.push(link);
+    }
+  };
+
+  const rankedCap = exhaustive ? 40 : 10;
+  for (const url of ranked.slice(0, rankedCap)) {
+    if (outOfTime() || found.length >= limit) break;
     // Directory platforms render the list client-side; give them a moment.
     const isPdf = PDF_RE.test(url);
     const page = await firecrawlScrape(
@@ -743,22 +771,22 @@ async function findExhibitorSources(
     ).catch(() => null);
     addFound(url, page?.markdown ?? "");
     // Exhibitor pages often only link to the real list (commonly a PDF).
-    for (const link of page?.links ?? []) {
-      if (secondHop.length >= 6) break;
-      if (!/^https?:\/\//i.test(link) || candidates.includes(link) || secondHop.includes(link)) continue;
-      if (PDF_RE.test(link) && EXHIBITOR_PDF_RE.test(link)) secondHop.push(link);
-      else if (EXHIBITOR_LINK_RE.test(link) && scoreCandidate(link) >= 4) secondHop.push(link);
-    }
+    collectHops(url, page?.links ?? []);
   }
 
-  // Follow the links discovered on the exhibitor pages themselves (PDF lists).
-  for (const url of secondHop) {
-    if (outOfTime() || found.length >= max) break;
+  // Follow the links discovered on the exhibitor pages themselves (PDF lists,
+  // A-Z index pages, "page 2" links).
+  for (let i = 0; i < secondHop.length; i += 1) {
+    const url = secondHop[i];
+    if (outOfTime() || found.length >= limit) break;
     const page = await firecrawlScrape(
       url,
-      PDF_RE.test(url) ? { formats: ["markdown"], parsers: ["pdf"] } : { formats: ["markdown"], waitFor: 4000 },
+      PDF_RE.test(url)
+        ? { formats: ["markdown"], parsers: ["pdf"] }
+        : { formats: ["markdown", "links"], waitFor: 4000 },
     ).catch(() => null);
     addFound(url, page?.markdown ?? "");
+    if (exhaustive) collectHops(url, page?.links ?? []);
   }
 
   const homeMd = home?.markdown ?? "";
@@ -767,6 +795,27 @@ async function findExhibitorSources(
   }
   return found;
 }
+
+/**
+ * True when `link` is another page of the same exhibitor listing as `pageUrl`
+ * (pagination, A-Z letter index, or "load more" style query variants).
+ */
+function isSameListingPage(pageUrl: string, link: string): boolean {
+  try {
+    const a = new URL(pageUrl);
+    const b = new URL(link);
+    if (a.hostname !== b.hostname) return false;
+    const samePath = a.pathname === b.pathname;
+    const paginated = /([?&#](page|p|pg|start|offset|letter|alpha|char|index)=)/i.test(link);
+    const letterPath =
+      b.pathname.startsWith(a.pathname.replace(/\/$/, "")) &&
+      /\/(page\/\d+|[a-z0-9])\/?$/i.test(b.pathname.slice(a.pathname.replace(/\/$/, "").length));
+    return (samePath && b.search !== a.search && paginated) || (paginated && samePath) || letterPath;
+  } catch {
+    return false;
+  }
+}
+
 
 
 
@@ -1269,8 +1318,14 @@ ${sourceLinks.slice(0, 80).join("\n")}`,
 
   await admin.from("research_runs").update({ status: "analyzing" }).eq("id", runId);
 
-  // Scrape top events for exhibitors
-  const maxLeads = input.filters.maxLeadsPerShow ?? 10;
+  // Scrape top events for exhibitors.
+  // maxLeadsPerShow = 0 means "every exhibitor we can find on the show".
+  const requestedLeads = input.filters.maxLeadsPerShow ?? 10;
+  const unlimitedLeads = requestedLeads <= 0;
+  const maxLeads = unlimitedLeads ? Number.POSITIVE_INFINITY : requestedLeads;
+  /** Per-page extraction batch size (the model needs a finite number). */
+  const extractBatch = unlimitedLeads ? 200 : requestedLeads * 2;
+
   // 0 (or unset via 0) means "deep-dive every show we kept" — no cap.
   const requestedDeepDive = input.filters.maxDeepDiveShows ?? (eventList.is_directory ? 12 : 1);
   const deepDiveCount =
@@ -1299,7 +1354,12 @@ ${sourceLinks.slice(0, 80).join("\n")}`,
         sources = await withHeartbeat(
           "extract_exhibitors",
           `Looking for the exhibitor list of ${ev.event_name}`,
-          () => findExhibitorSources(ev.official_url, ev.event_name, Math.max(maxLeads, 12)),
+          () =>
+            findExhibitorSources(
+              ev.official_url,
+              ev.event_name,
+              unlimitedLeads ? 0 : Math.max(requestedLeads, 12),
+            ),
         );
         if (sources.length === 0) {
           limitations.push(
@@ -1358,7 +1418,7 @@ ${sourceLinks.slice(0, 80).join("\n")}`,
     };
 
     for (const src of sources) {
-      const deterministic = parseExhibitorsFromMarkdown(src.markdown, src.url, maxLeads * 2);
+      const deterministic = parseExhibitorsFromMarkdown(src.markdown, src.url, extractBatch);
       if (deterministic.length > 0) {
         const added = addCandidateExhibitors(deterministic);
         await recordPageParsed(src.url, added);
@@ -1375,7 +1435,7 @@ ${sourceLinks.slice(0, 80).join("\n")}`,
 
       const exhibitorPrompt = `${CORE_SYSTEM}
 
-TASK: Extract EXHIBITING COMPANIES from the source below for event "${ev.event_name}". Return up to ${maxLeads * 2} candidates. Skip associations, government bodies, media partners, sponsors that aren't exhibitors, universities, and service vendors that are not the trade show's own exhibitors. Normalize company names (strip Inc./LLC/etc for normalized_company_name).
+TASK: Extract EXHIBITING COMPANIES from the source below for event "${ev.event_name}". Return up to ${extractBatch} candidates. Extract EVERY exhibiting company listed on the page — do not stop early or summarize. Skip associations, government bodies, media partners, sponsors that aren't exhibitors, universities, and service vendors that are not the trade show's own exhibitors. Normalize company names (strip Inc./LLC/etc for normalized_company_name).
 
 Source URL: ${src.url}
 
@@ -1402,7 +1462,7 @@ ${src.markdown.slice(0, 60000)}`;
       }
     }
 
-    exhibitors = exhibitors.slice(0, maxLeads);
+    if (!unlimitedLeads) exhibitors = exhibitors.slice(0, requestedLeads);
 
     if (exhibitors.length === 0) {
       limitations.push(`No exhibitors could be extracted for ${ev.event_name}.`);
