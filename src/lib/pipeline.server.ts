@@ -14,6 +14,7 @@ import {
   ExhibitorListSchema,
   LeadSchema,
   ExecSummarySchema,
+  type EventRecord,
   type LeadRecord,
 } from "./pipeline-schemas";
 
@@ -54,6 +55,121 @@ function extractJson(text: string): unknown {
       return null;
     }
   }
+}
+
+function splitMarkdownTableRow(line: string): string[] {
+  const trimmed = line.trim();
+  if (!trimmed.startsWith("|") || !trimmed.endsWith("|")) return [];
+  return trimmed
+    .slice(1, -1)
+    .split("|")
+    .map((cell) => cell.trim());
+}
+
+function parseMarkdownLink(cell: string): { label: string; url: string | null } {
+  const match = Array.from(cell.matchAll(/(!?)\[([^\]]+)]\(([^)]+)\)/g)).find((m) => m[1] !== "!");
+  if (!match) return { label: cell.replace(/<br\s*\/?>/gi, " ").trim(), url: null };
+  return { label: match[2].trim(), url: match[3].trim() };
+}
+
+function numberFromCell(cell: string): number | null {
+  const cleaned = cell.replace(/[^0-9]/g, "");
+  if (!cleaned) return null;
+  const value = Number(cleaned);
+  return Number.isFinite(value) ? value : null;
+}
+
+function parseLocation(location: string): { city: string | null; state: string | null } {
+  const parts = location.split(",").map((part) => part.trim()).filter(Boolean);
+  if (parts.length >= 2) return { city: parts.slice(0, -1).join(", "), state: parts[parts.length - 1] };
+  return { city: location.trim() || null, state: null };
+}
+
+function inferIndustry(name: string): string | null {
+  const n = name.toLowerCase();
+  if (/medical|health|diagnostic|hospital|pharma|clinical|respiratory/.test(n)) return "Healthcare";
+  if (/tech|automation|ai|software|cyber|black hat|data|electronics/.test(n)) return "Technology";
+  if (/manufactur|process|pack|material|fastener|welding|industrial/.test(n)) return "Manufacturing";
+  if (/vehicle|auto|aviation|travel|rail|marine|logistics|supply chain/.test(n)) return "Transportation";
+  if (/food|wine|agri|farm|restaurant/.test(n)) return "Food & Agriculture";
+  if (/design|market|textile|gift|home|architecture|building/.test(n)) return "Design & Construction";
+  return null;
+}
+
+function scoreDirectoryEvent(args: {
+  name: string;
+  country: string | null;
+  attendees: number | null;
+  exhibitors: number | null;
+  targetMarket?: string | null;
+}): number {
+  const target = (args.targetMarket ?? "").toLowerCase();
+  const country = (args.country ?? "").toLowerCase();
+  let score = 45;
+  if (args.exhibitors !== null) score += Math.min(30, Math.round(args.exhibitors / 25));
+  if (args.attendees !== null) score += Math.min(15, Math.round(args.attendees / 3000));
+  if (target.includes("united states") && country === "united states") score += 12;
+  if (inferIndustry(args.name)) score += 6;
+  return Math.max(0, Math.min(100, score));
+}
+
+function extractEventsFromMarkdownDirectory(
+  markdown: string,
+  targetMarket?: string | null,
+): EventRecord[] {
+  const events: EventRecord[] = [];
+  for (const line of markdown.split("\n")) {
+    if (/show names|next dates|attendees|exhibitors/i.test(line)) continue;
+    const cells = splitMarkdownTableRow(line);
+    if (cells.length < 6 || !cells[0].includes("](")) continue;
+    const linked = parseMarkdownLink(cells[0]);
+    if (!linked.label || /show names/i.test(linked.label)) continue;
+    const location = parseLocation(cells[2] ?? "");
+    const country = (cells[3] ?? "").trim() || null;
+    const attendees = numberFromCell(cells[4] ?? "");
+    const exhibitors = numberFromCell(cells[5] ?? "");
+    const eventName = linked.label.replace(/\s+/g, " ").trim();
+    events.push({
+      event_name: eventName,
+      official_url: linked.url,
+      industry: inferIndustry(eventName),
+      start_date: (cells[1] ?? "").trim() || null,
+      end_date: null,
+      venue: null,
+      city: location.city,
+      state: location.state,
+      country,
+      event_opportunity_score: scoreDirectoryEvent({
+        name: eventName,
+        country,
+        attendees,
+        exhibitors,
+        targetMarket,
+      }),
+      recommended_outreach_phase: "DESIGN_AND_BUDGET",
+      estimated_exhibitor_count: exhibitors,
+      rationale: `Directory row lists ${exhibitors ?? "unknown"} exhibitors and ${attendees ?? "unknown"} attendees.`,
+    });
+  }
+
+  return events
+    .sort((a, b) => b.event_opportunity_score - a.event_opportunity_score)
+    .slice(0, 15);
+}
+
+function compactSourceMarkdown(markdown: string): string {
+  return markdown
+    .split("\n")
+    .filter((line) => line.length < 4000)
+    .join("\n")
+    .slice(0, 25000);
+}
+
+function fmtElapsed(ms: number): string {
+  const sec = Math.max(0, Math.round(ms / 1000));
+  const min = Math.floor(sec / 60);
+  const rest = sec % 60;
+  return min > 0 ? `${min}m ${String(rest).padStart(2, "0")}s` : `${rest}s`;
 }
 
 /**
@@ -201,6 +317,21 @@ export async function runPipeline(
     }
   };
 
+  const withHeartbeat = async <T,>(stage: string, message: string, work: () => Promise<T>): Promise<T> => {
+    const started = Date.now();
+    const timer = setInterval(() => {
+      const elapsed = fmtElapsed(Date.now() - started);
+      void progress(stage, `${message} · still working (${elapsed})`).catch((error: unknown) => {
+        console.warn(`[progress] heartbeat failed for ${stage}:`, (error as Error)?.message ?? error);
+      });
+    }, 20_000);
+    try {
+      return await work();
+    } finally {
+      clearInterval(timer);
+    }
+  };
+
 
   const limitations: string[] = [];
 
@@ -230,7 +361,9 @@ export async function runPipeline(
   let sourceMarkdown = "";
   let sourceLinks: string[] = [];
   try {
-    const scraped = await firecrawlScrape(input.inputUrl, { formats: ["markdown", "links"] });
+    const scraped = await withHeartbeat("scrape_source", `Fetching ${input.inputUrl}`, () =>
+      firecrawlScrape(input.inputUrl, { formats: ["markdown", "links"] }),
+    );
     sourceMarkdown = scraped.markdown ?? "";
     sourceLinks = (scraped.links ?? []).slice(0, 200);
   } catch (e) {
@@ -238,6 +371,8 @@ export async function runPipeline(
   }
 
   await progress("extract_events", "Identifying trade shows in the source");
+  const parsedDirectoryEvents = extractEventsFromMarkdownDirectory(sourceMarkdown, input.targetMarket);
+
   const eventListPrompt = `${CORE_SYSTEM}
 
 Source URL: ${input.inputUrl}
@@ -251,29 +386,41 @@ Rank each event by opportunity for a custom-booth / LED / exhibit-services vendo
 recommended_outreach_phase must be one of: EARLY_PLANNING, VENDOR_SELECTION, DESIGN_AND_BUDGET, PRODUCTION_SUPPORT, URGENT_SUPPORT, POST_SHOW_NURTURE.
 
 --- SOURCE MARKDOWN ---
-${sourceMarkdown.slice(0, 25000)}
+${compactSourceMarkdown(sourceMarkdown)}
 
 --- LINKS ON PAGE ---
 ${sourceLinks.slice(0, 80).join("\n")}`;
 
   let eventList: import("zod").infer<typeof EventListSchema>;
-  try {
-    eventList = await generateStructured(extractModel, EventListSchema, eventListPrompt);
+  if (parsedDirectoryEvents.length > 0) {
+    eventList = {
+      source_classification: "markdown_directory_table",
+      is_directory: true,
+      events: parsedDirectoryEvents,
+      limitations: ["Events were parsed directly from the directory table to avoid model timeouts."],
+    };
     limitations.push(...(eventList.limitations ?? []));
-  } catch (e) {
-    if (NoObjectGeneratedError.isInstance(e)) {
-      limitations.push("Event extraction returned malformed output; halting.");
-    } else {
-      limitations.push(`Event extraction failed: ${(e as Error).message}`);
+  } else {
+    try {
+      eventList = await withHeartbeat("extract_events", "Identifying trade shows in the source", () =>
+        generateStructured(extractModel, EventListSchema, eventListPrompt),
+      );
+      limitations.push(...(eventList.limitations ?? []));
+    } catch (e) {
+      if (NoObjectGeneratedError.isInstance(e)) {
+        limitations.push("Event extraction returned malformed output; halting.");
+      } else {
+        limitations.push(`Event extraction failed: ${(e as Error).message}`);
+      }
+      await finishSteps();
+      await admin.from("research_runs").update({
+        status: "failed",
+        error_message: (e as Error).message,
+        limitations,
+        step_log: stepLog,
+      }).eq("id", runId);
+      return;
     }
-    await finishSteps();
-    await admin.from("research_runs").update({
-      status: "failed",
-      error_message: (e as Error).message,
-      limitations,
-      step_log: stepLog,
-    }).eq("id", runId);
-    return;
   }
 
   // Persist events
@@ -320,7 +467,9 @@ ${sourceLinks.slice(0, 80).join("\n")}`;
 
     if (eventList.is_directory && ev.official_url) {
       try {
-        const scraped = await firecrawlScrape(ev.official_url, { formats: ["markdown", "links"] });
+        const scraped = await withHeartbeat("extract_exhibitors", `Fetching event page for ${ev.event_name}`, () =>
+          firecrawlScrape(ev.official_url, { formats: ["markdown", "links"] }),
+        );
         exhibitorSource = scraped.markdown ?? "";
         exhibitorSourceUrl = ev.official_url;
       } catch (e) {
@@ -340,7 +489,9 @@ ${exhibitorSource.slice(0, 30000)}`;
 
     let exhibitorList: import("zod").infer<typeof ExhibitorListSchema>;
     try {
-      exhibitorList = await generateStructured(extractModel, ExhibitorListSchema, exhibitorPrompt);
+      exhibitorList = await withHeartbeat("extract_exhibitors", `Extracting exhibitors from ${ev.event_name}`, () =>
+        generateStructured(extractModel, ExhibitorListSchema, exhibitorPrompt),
+      );
       if (exhibitorList.extraction_complete === false) {
         limitations.push(`Exhibitor list for ${ev.event_name} is partial.`);
       }
@@ -358,9 +509,14 @@ ${exhibitorSource.slice(0, 30000)}`;
       // Firecrawl search for enrichment context
       let enrichmentContext = "";
       try {
-        const results = await firecrawlSearch(
-          `${ex.company_name} trade show exhibit booth ${ev.event_name}`,
-          { limit: 3 },
+        const results = await withHeartbeat(
+          "enrich_leads",
+          `[${ev.event_name}] Searching context for ${ex.company_name}`,
+          () =>
+            firecrawlSearch(
+              `${ex.company_name} trade show exhibit booth ${ev.event_name}`,
+              { limit: 3 },
+            ),
         );
         enrichmentContext = results
           .map((r) => `[${r.url}] ${r.title ?? ""} — ${r.description ?? ""}`)
@@ -397,7 +553,9 @@ TASK:
 6. Set confidence_level based on how well-supported the record is.`;
 
       try {
-        const output = await generateStructured(reasonModel, LeadSchema, leadPrompt);
+        const output = await withHeartbeat("enrich_leads", `[${ev.event_name}] Scoring ${ex.company_name}`, () =>
+          generateStructured(reasonModel, LeadSchema, leadPrompt),
+        );
         allLeads.push({
           lead: output,
           eventId: ev.id,
