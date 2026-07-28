@@ -28,6 +28,7 @@ function NewRun() {
     startDateTo: "",
     maxEvents: 500,
     maxDirectoryPages: 25,
+    pageReuseHours: 24,
     maxDeepDiveShows: 4,
     priorityIndustries: "technology, manufacturing, medical, automotive",
     targetServices: DEFAULT_SERVICES.join(", "),
@@ -49,6 +50,7 @@ function NewRun() {
           startDateTo: form.startDateTo || null,
           maxEvents: form.maxEvents,
           maxDirectoryPages: form.maxDirectoryPages,
+          pageReuseHours: form.pageReuseHours,
           maxDeepDiveShows: form.maxDeepDiveShows,
           priorityIndustries: form.priorityIndustries.split(",").map((s) => s.trim()).filter(Boolean),
           targetServices: form.targetServices.split(",").map((s) => s.trim()).filter(Boolean),
@@ -175,6 +177,19 @@ function NewRun() {
               max={50}
               value={form.maxDirectoryPages}
               onChange={(e) => setForm({ ...form, maxDirectoryPages: parseInt(e.target.value || "25") })}
+              className="w-full rounded-md border border-border bg-input px-3 py-2 text-sm font-mono"
+            />
+          </Field>
+          <Field
+            label="Reuse pages fetched within (hours)"
+            hint="Re-runs skip refetching directory pages newer than this. 0 forces a fresh fetch."
+          >
+            <input
+              type="number"
+              min={0}
+              max={720}
+              value={form.pageReuseHours}
+              onChange={(e) => setForm({ ...form, pageReuseHours: parseInt(e.target.value || "0") })}
               className="w-full rounded-md border border-border bg-input px-3 py-2 text-sm font-mono"
             />
           </Field>

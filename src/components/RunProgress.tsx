@@ -40,6 +40,8 @@ export type RunCounters = {
   deep_dive_done?: number;
   exhibitors_found?: number;
   leads_scored?: number;
+  pages_reused?: number;
+  pages_fetched?: number;
 };
 
 function Stat({ label, value, tone }: { label: string; value: number | string; tone?: "muted" }) {
@@ -97,6 +99,8 @@ export function RunProgress({
   const ddDone = counters.deep_dive_done ?? 0;
   const leads = counters.leads_scored ?? liveLeads;
   const exhibitors = counters.exhibitors_found ?? 0;
+  const pagesReused = counters.pages_reused ?? 0;
+  const pagesFetched = counters.pages_fetched ?? 0;
 
   // Weighted overall completion: stage position blended with deep-dive progress.
   const stagePct = ((idx + (idx >= 4 && ddTotal > 0 ? ddDone / ddTotal : 0.5)) / STAGES.length) * 100;
@@ -134,6 +138,12 @@ export function RunProgress({
                 value={ddTotal > 0 ? `${ddDone}/${ddTotal}` : ddDone}
               />
               <Stat label="Leads scored" value={leads} />
+            </div>
+          )}
+          {pagesReused + pagesFetched > 0 && (
+            <div className="mt-2 text-[11px] text-muted-foreground">
+              Directory pages: {pagesFetched} fetched
+              {pagesReused > 0 && <> · {pagesReused} reused from cache</>}
             </div>
           )}
           {exhibitors > 0 && (

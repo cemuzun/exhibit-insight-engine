@@ -589,6 +589,11 @@ export async function runPipeline(
       maxEvents?: number;
       /** Max extra paginated directory pages to fetch (default 25). */
       maxDirectoryPages?: number;
+      /**
+       * Re-use directory pages fetched within this many hours instead of
+       * refetching them (default 24). 0 forces a fresh fetch of every page.
+       */
+      pageReuseHours?: number;
       /** Max shows to deep-dive for exhibitors/leads (default 4). */
       maxDeepDiveShows?: number;
       /** Skip shows starting sooner than this many days from now (default 45). */
@@ -659,6 +664,8 @@ export async function runPipeline(
     deep_dive_done: 0,
     exhibitors_found: 0,
     leads_scored: 0,
+    pages_reused: 0,
+    pages_fetched: 0,
     scoring_feed: [] as ScoringFeedEntry[],
   };
   const bumpCounters = async (patch: Partial<typeof counters>) => {
@@ -792,12 +799,27 @@ export async function runPipeline(
   const maxEvents = Math.max(1, Math.min(2000, input.filters.maxEvents ?? 500));
   const maxPages = Math.max(1, Math.min(50, input.filters.maxDirectoryPages ?? 25));
 
+  // Re-run reuse window: pages fetched inside this window are served from the
+  // shared cache, so a re-run (or an auto-resume) replays discovery without
+  // paying for the same directory pages again.
+  const reuseHours = Math.max(0, Math.min(720, input.filters.pageReuseHours ?? 24));
+  const pageCache = reuseHours > 0
+    ? { maxAgeMs: reuseHours * 3_600_000, ttlMs: Math.max(reuseHours, 24) * 3_600_000 }
+    : { bypass: true };
+  let reusedPages = 0;
+  let fetchedPages = 0;
+  const notePage = (fromCache?: boolean) => {
+    if (fromCache) reusedPages++;
+    else fetchedPages++;
+  };
+
   let sourceMarkdown = "";
   let sourceLinks: string[] = [];
   try {
     const scraped = await withHeartbeat("scrape_source", `Fetching ${input.inputUrl}`, () =>
-      firecrawlScrape(input.inputUrl, { formats: ["markdown", "links"] }),
+      firecrawlScrape(input.inputUrl, { formats: ["markdown", "links"], cache: pageCache }),
     );
+    notePage(scraped.fromCache);
     sourceMarkdown = scraped.markdown ?? "";
     sourceLinks = (scraped.links ?? []).slice(0, 2000);
   } catch (e) {
@@ -818,7 +840,8 @@ export async function runPipeline(
       () =>
         mapPool(paginationUrls, concurrency, async (url) => {
           try {
-            const page = await firecrawlScrape(url, { formats: ["markdown"] });
+            const page = await firecrawlScrape(url, { formats: ["markdown"], cache: pageCache });
+            notePage(page.fromCache);
             return { url, markdown: page.markdown ?? "" };
           } catch {
             return { url, markdown: "" };
@@ -834,6 +857,17 @@ export async function runPipeline(
   }
 
   const allMarkdown = [sourceMarkdown, ...extraPages.map((p) => p.markdown)].join("\n");
+
+  await bumpCounters({ pages_reused: reusedPages, pages_fetched: fetchedPages });
+  if (reusedPages > 0) {
+    await progress(
+      "scrape_source",
+      `Reused ${reusedPages} cached directory page(s) from the last ${reuseHours}h · fetched ${fetchedPages} fresh`,
+    );
+    limitations.push(
+      `Reused ${reusedPages} directory page(s) cached within the last ${reuseHours}h (set the reuse window to 0 on a new run to force fresh fetches).`,
+    );
+  }
 
   await progress("extract_events", "Identifying trade shows in the source");
   const parsedDirectoryEvents = dedupeEvents(

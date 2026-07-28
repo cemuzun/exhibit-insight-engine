@@ -2,10 +2,10 @@
 // Two layers: an in-process LRU-ish map (fast, survives retries within a run)
 // and a Postgres table (survives across runs / server instances).
 
-type CacheRow = { response: unknown; expires_at: string };
+type CacheRow = { response: unknown; expires_at: string; created_at: string };
 
 const MEM_MAX = 300;
-const mem = new Map<string, { value: unknown; expiresAt: number }>();
+const mem = new Map<string, { value: unknown; expiresAt: number; storedAt: number }>();
 
 function envInt(name: string, fallback: number): number {
   const raw = process.env[name];
@@ -63,7 +63,7 @@ function memSet(key: string, value: unknown, ttlMs: number) {
     const oldest = mem.keys().next().value as string | undefined;
     if (oldest) mem.delete(oldest);
   }
-  mem.set(key, { value, expiresAt: Date.now() + ttlMs });
+  mem.set(key, { value, expiresAt: Date.now() + ttlMs, storedAt: Date.now() });
 }
 
 async function admin() {
@@ -71,21 +71,34 @@ async function admin() {
   return supabaseAdmin;
 }
 
-export async function cacheGet<T>(key: string): Promise<T | undefined> {
+/**
+ * @param maxAgeMs when set, entries fetched longer ago than this are ignored
+ *        (the "reuse window" a re-run asks for), even if not expired yet.
+ */
+export async function cacheGet<T>(key: string, maxAgeMs?: number): Promise<T | undefined> {
   if (cacheDisabled()) return undefined;
-  const hit = memGet(key);
-  if (hit !== undefined) return hit as T;
+  const memHit = mem.get(key);
+  if (memHit && maxAgeMs !== undefined && Date.now() - memHit.storedAt > maxAgeMs) {
+    mem.delete(key);
+  } else {
+    const hit = memGet(key);
+    if (hit !== undefined) return hit as T;
+  }
   try {
     const db = await admin();
     const { data } = await db
       .from("firecrawl_cache" as never)
-      .select("response, expires_at")
+      .select("response, expires_at, created_at")
       .eq("cache_key", key)
       .maybeSingle();
     const row = data as CacheRow | null;
     if (!row) return undefined;
     const expiresAt = Date.parse(row.expires_at);
     if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) return undefined;
+    if (maxAgeMs !== undefined) {
+      const createdAt = Date.parse(row.created_at);
+      if (Number.isFinite(createdAt) && Date.now() - createdAt > maxAgeMs) return undefined;
+    }
     memSet(key, row.response, expiresAt - Date.now());
     return row.response as T;
   } catch {
@@ -119,16 +132,28 @@ export async function cacheSet(
   }
 }
 
+export type CacheOptions = {
+  /** Ignore entries fetched longer ago than this (the reuse window). */
+  maxAgeMs?: number;
+  /** Override how long a fresh entry stays usable. */
+  ttlMs?: number;
+  /** Skip the cache entirely for this call. */
+  bypass?: boolean;
+};
+
 /** Wrap a Firecrawl call with read-through caching. */
 export async function withCache<T>(
   kind: "scrape" | "search",
   request: unknown,
   fn: () => Promise<T>,
+  opts: CacheOptions = {},
 ): Promise<{ value: T; cached: boolean }> {
   const key = await cacheKey(kind, request);
-  const hit = await cacheGet<T>(key);
-  if (hit !== undefined) return { value: hit, cached: true };
+  if (!opts.bypass) {
+    const hit = await cacheGet<T>(key, opts.maxAgeMs);
+    if (hit !== undefined) return { value: hit, cached: true };
+  }
   const value = await fn();
-  await cacheSet(key, kind, request, value, cacheTtlMs(kind));
+  await cacheSet(key, kind, request, value, opts.ttlMs ?? cacheTtlMs(kind));
   return { value, cached: false };
 }
