@@ -53,7 +53,7 @@ describe("preflight script (integration)", () => {
 
   it("exits non-zero and prints install command when a package is missing", () => {
     const dir = scaffold(["zod"]); // intentionally missing ai, etc.
-    const res = runIn(dir);
+    const res = runIn(dir, envWithAll);
     expect(res.status).not.toBe(0);
     const output = res.stdout + res.stderr;
     expect(output).toMatch(/missing/i);
@@ -72,7 +72,7 @@ describe("preflight script (integration)", () => {
       join(dir, "bun.lock"),
       JSON.stringify({ lockfileVersion: 1, packages: { ai: ["ai@6.0.0", "", {}, ""] } }),
     );
-    const res = runIn(dir);
+    const res = runIn(dir, envWithAll);
     expect(res.status).not.toBe(0);
     const output = res.stdout + res.stderr;
     expect(output).toMatch(/pin mismatch/i);
@@ -90,10 +90,47 @@ describe("preflight script (integration)", () => {
       join(dir, "bun.lock"),
       JSON.stringify({ lockfileVersion: 1, packages: { ai: ["ai@7.0.37", "", {}, ""] } }),
     );
-    const res = runIn(dir);
+    const res = runIn(dir, envWithAll);
     expect(res.status).toBe(0);
     expect(res.stdout).toMatch(/pinned versions match/i);
   });
+
+  it("fails when a required environment variable is missing", async () => {
+    const { REQUIRED } = await import("../../scripts/required-packages.mjs");
+    const dir = scaffold(REQUIRED);
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({ name: "t", version: "0.0.0", dependencies: { ai: "7.0.37" } }),
+    );
+    writeFileSync(
+      join(dir, "bun.lock"),
+      JSON.stringify({ lockfileVersion: 1, packages: { ai: ["ai@7.0.37", "", {}, ""] } }),
+    );
+    const envWithoutFirecrawl = { ...envWithAll };
+    delete envWithoutFirecrawl.FIRECRAWL_API_KEY;
+    const res = runIn(dir, envWithoutFirecrawl);
+    expect(res.status).not.toBe(0);
+    const output = res.stdout + res.stderr;
+    expect(output).toMatch(/environment variable\(s\) missing/i);
+    expect(output).toContain("FIRECRAWL_API_KEY");
+  });
+
+  it("passes when all required environment variables are set", async () => {
+    const { REQUIRED } = await import("../../scripts/required-packages.mjs");
+    const dir = scaffold(REQUIRED);
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({ name: "t", version: "0.0.0", dependencies: { ai: "7.0.37" } }),
+    );
+    writeFileSync(
+      join(dir, "bun.lock"),
+      JSON.stringify({ lockfileVersion: 1, packages: { ai: ["ai@7.0.37", "", {}, ""] } }),
+    );
+    const res = runIn(dir, envWithAll);
+    expect(res.status).toBe(0);
+    expect(res.stdout).toMatch(/environment variable\(s\) are set/i);
+  });
 });
+
 
 
