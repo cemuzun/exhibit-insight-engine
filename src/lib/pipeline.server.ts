@@ -1555,9 +1555,12 @@ ${src.markdown.slice(0, 60000)}`;
         status: "skipped",
         reason: `Skipped — no exhibitors extractable from ${sources.length} candidate page(s)`,
       });
+      debugEntry.skip_reason = `No exhibitors extractable from ${sources.length} candidate page(s)`;
+      await saveDebug();
       await bumpCounters({ deep_dive_done: counters.deep_dive_done + 1 });
       continue;
     }
+
 
     let completed = 0;
 
