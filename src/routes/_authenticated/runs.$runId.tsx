@@ -24,6 +24,9 @@ import { listEmailTemplates } from "@/lib/templates.functions";
 import { renderForLead, type EmailTemplate } from "@/lib/email-template-engine";
 import { toast } from "sonner";
 import { getRunReport, getRunCrmExport } from "@/lib/report.functions";
+import { ScoreBreakdown } from "@/components/ScoreBreakdown";
+import { getScoringSettings } from "@/lib/scoring.functions";
+import { DEFAULT_SCORING } from "@/lib/scoring";
 
 export const Route = createFileRoute("/_authenticated/runs/$runId")({
   head: () => ({ meta: [{ title: "Run — BoothLens" }, { name: "robots", content: "noindex" }] }),
@@ -472,8 +475,10 @@ function Stat({ label, value, accent }: { label: string; value: number | string;
 }
 
 function LeadDrawer({ lead, onClose }: { lead: Lead; onClose: () => void }) {
-  const [tab, setTab] = useState<"overview" | "booth" | "dm" | "outreach" | "sources" | "json">("overview");
+  const [tab, setTab] = useState<"overview" | "score" | "booth" | "dm" | "outreach" | "sources" | "json">("overview");
   const listTemplates = useServerFn(listEmailTemplates);
+  const fetchScoring = useServerFn(getScoringSettings);
+  const { data: scoring } = useQuery({ queryKey: ["scoring-settings"], queryFn: () => fetchScoring() });
   const { data: templates } = useQuery({ queryKey: ["email-templates"], queryFn: () => listTemplates() });
   const templated = useMemo(
     () => (templates ? renderForLead(templates as EmailTemplate[], lead) : null),
@@ -499,10 +504,10 @@ function LeadDrawer({ lead, onClose }: { lead: Lead; onClose: () => void }) {
         </div>
 
         <div className="mt-6 flex flex-wrap gap-1 border-b border-border text-xs">
-          {(["overview","booth","dm","outreach","sources","json"] as const).map((t) => (
+          {(["overview","score","booth","dm","outreach","sources","json"] as const).map((t) => (
             <button key={t} onClick={() => setTab(t)}
               className={`px-3 py-2 -mb-px border-b-2 ${tab === t ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
-              {({ overview: "Overview", booth: "Booth & services", dm: "Decision makers", outreach: "Outreach", sources: "Sources", json: "JSON" } as const)[t]}
+              {({ overview: "Overview", score: "Score", booth: "Booth & services", dm: "Decision makers", outreach: "Outreach", sources: "Sources", json: "JSON" } as const)[t]}
             </button>
           ))}
         </div>
@@ -516,7 +521,10 @@ function LeadDrawer({ lead, onClose }: { lead: Lead; onClose: () => void }) {
               <KV label="Estimated project value" value={lead.estimated_project_value_low ? `$${lead.estimated_project_value_low.toLocaleString()} – $${(lead.estimated_project_value_high ?? 0).toLocaleString()} (estimate)` : null} />
               <KV label="Recommended services" value={lead.recommended_services.join(", ")} />
               <div>
-                <div className="text-xs uppercase tracking-wider text-muted-foreground">Score breakdown</div>
+                <div className="flex items-center justify-between">
+                  <div className="text-xs uppercase tracking-wider text-muted-foreground">Score breakdown</div>
+                  <button onClick={() => setTab("score")} className="text-xs text-primary hover:underline">See full breakdown →</button>
+                </div>
                 <div className="mt-2 grid grid-cols-3 gap-2">
                   {lead.score_breakdown && Object.entries(lead.score_breakdown).map(([k, v]) => (
                     <div key={k} className="rounded border border-border bg-background p-2 text-xs">
@@ -533,6 +541,9 @@ function LeadDrawer({ lead, onClose }: { lead: Lead; onClose: () => void }) {
                 </div>
               )}
             </div>
+          )}
+          {tab === "score" && (
+            <ScoreBreakdown lead={lead} scoring={scoring ?? DEFAULT_SCORING} />
           )}
           {tab === "booth" && (
             <div className="space-y-3">
