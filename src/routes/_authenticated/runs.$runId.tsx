@@ -5,6 +5,7 @@ import { useState, useMemo } from "react";
 import { getRun } from "@/lib/research.functions";
 import { syncRunToCrm } from "@/lib/crm.functions";
 import { CrmSyncPreview } from "@/components/CrmSyncPreview";
+import { RunProgress } from "@/components/RunProgress";
 
 import { listEmailTemplates } from "@/lib/templates.functions";
 import { renderForLead, type EmailTemplate } from "@/lib/email-template-engine";
@@ -124,16 +125,14 @@ function RunDetail() {
       </div>
 
       {inProgress && (
-        <div className="mb-6 rounded-lg border border-border bg-card p-4">
-          <div className="flex items-center gap-3">
-            <div className="h-2 w-2 animate-pulse rounded-full bg-warning" />
-            <div className="flex-1">
-              <div className="text-sm font-medium capitalize">{(run.stage ?? "queued").replace(/_/g, " ")}</div>
-              <div className="text-xs text-muted-foreground">{run.progress_message ?? "Working…"}</div>
-            </div>
-          </div>
-        </div>
+        <RunProgress
+          stage={run.stage ?? null}
+          message={run.progress_message ?? null}
+          createdAt={run.created_at}
+          updatedAt={(run as { updated_at?: string }).updated_at ?? null}
+        />
       )}
+
 
       {run.status === "failed" && (
         <div className="mb-6 rounded-lg border border-destructive/40 bg-destructive/10 p-4">
