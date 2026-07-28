@@ -1,0 +1,1 @@
+UPDATE public.research_runs SET status='failed', error_message='Run stalled — no progress for over 5 minutes. Use Re-run to try again.' WHERE status NOT IN ('complete','failed') AND updated_at < now() - interval '5 minutes';
