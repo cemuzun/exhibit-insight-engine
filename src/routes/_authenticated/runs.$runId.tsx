@@ -84,22 +84,32 @@ function RunDetail() {
     },
   });
 
-  // Live push updates for step-by-step progress.
+  // Live push updates for step-by-step progress and for results as they land.
   useEffect(() => {
+    const invalidate = () => queryClient.invalidateQueries({ queryKey: ["run", runId] });
     const channel = supabase
       .channel(`run-${runId}`)
       .on(
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "research_runs", filter: `id=eq.${runId}` },
-        () => {
-          queryClient.invalidateQueries({ queryKey: ["run", runId] });
-        },
+        invalidate,
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "events", filter: `run_id=eq.${runId}` },
+        invalidate,
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "leads", filter: `run_id=eq.${runId}` },
+        invalidate,
       )
       .subscribe();
     return () => {
       supabase.removeChannel(channel);
     };
   }, [runId, queryClient]);
+
 
 
   if (isLoading || !data) return <main className="mx-auto max-w-7xl px-6 py-8"><p className="text-sm text-muted-foreground">Loading…</p></main>;
