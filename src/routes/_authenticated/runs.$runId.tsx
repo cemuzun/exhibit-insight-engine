@@ -3,6 +3,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { useQuery } from "@tanstack/react-query";
 import { useState, useMemo } from "react";
 import { getRun } from "@/lib/research.functions";
+import { syncRunToCrm } from "@/lib/crm.functions";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/runs/$runId")({
@@ -106,9 +107,12 @@ function RunDetail() {
           </div>
         </div>
         {!inProgress && (
-          <div className="flex rounded-md border border-border bg-card p-1 text-xs">
-            <button onClick={() => setMode("dashboard")} className={`rounded px-3 py-1.5 ${mode === "dashboard" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}>Dashboard</button>
-            <button onClick={() => setMode("report")} className={`rounded px-3 py-1.5 ${mode === "report" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}>Report</button>
+          <div className="flex items-center gap-3">
+            <CrmSyncButton runId={runId} disabled={typedLeads.length === 0} />
+            <div className="flex rounded-md border border-border bg-card p-1 text-xs">
+              <button onClick={() => setMode("dashboard")} className={`rounded px-3 py-1.5 ${mode === "dashboard" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}>Dashboard</button>
+              <button onClick={() => setMode("report")} className={`rounded px-3 py-1.5 ${mode === "report" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}>Report</button>
+            </div>
           </div>
         )}
       </div>
@@ -140,6 +144,36 @@ function RunDetail() {
 
       {selected && <LeadDrawer lead={selected} onClose={() => setSelected(null)} />}
     </main>
+  );
+}
+
+function CrmSyncButton({ runId, disabled }: { runId: string; disabled?: boolean }) {
+  const sync = useServerFn(syncRunToCrm);
+  const [busy, setBusy] = useState(false);
+
+  async function run() {
+    setBusy(true);
+    try {
+      const r = await sync({ data: { runId, minScore: 50 } });
+      toast.success(
+        `CRM sync complete — ${r.companiesCreated} companies, ${r.contactsCreated} contacts created; ${r.skipped} skipped${r.failed ? `, ${r.failed} failed` : ""}.`,
+      );
+    } catch (e) {
+      toast.error((e as Error).message || "CRM sync failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <button
+      onClick={run}
+      disabled={busy || disabled}
+      className="rounded-md border border-border bg-card px-3 py-2 text-xs font-medium hover:bg-muted disabled:opacity-50"
+      title="Push qualified leads (score ≥ 50) and evidence-verified decision-maker contacts to HubSpot"
+    >
+      {busy ? "Syncing to CRM…" : "Sync to CRM"}
+    </button>
   );
 }
 

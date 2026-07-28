@@ -90,6 +90,11 @@ export type Database = {
           company_website: string | null
           confidence_level: string | null
           created_at: string
+          crm_company_id: string | null
+          crm_contact_ids: string[]
+          crm_error: string | null
+          crm_status: string
+          crm_synced_at: string | null
           decision_makers: Json
           employee_range: string | null
           estimated_project_value_high: number | null
@@ -125,6 +130,11 @@ export type Database = {
           company_website?: string | null
           confidence_level?: string | null
           created_at?: string
+          crm_company_id?: string | null
+          crm_contact_ids?: string[]
+          crm_error?: string | null
+          crm_status?: string
+          crm_synced_at?: string | null
           decision_makers?: Json
           employee_range?: string | null
           estimated_project_value_high?: number | null
@@ -160,6 +170,11 @@ export type Database = {
           company_website?: string | null
           confidence_level?: string | null
           created_at?: string
+          crm_company_id?: string | null
+          crm_contact_ids?: string[]
+          crm_error?: string | null
+          crm_status?: string
+          crm_synced_at?: string | null
           decision_makers?: Json
           employee_range?: string | null
           estimated_project_value_high?: number | null
