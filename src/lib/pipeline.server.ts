@@ -1757,12 +1757,13 @@ ${sourceLinks.slice(0, 80).join("\n")}`,
         else metrics.deterministic_records += 1;
 
         const key = normalizedCompanyKey(item.company_name);
-        if (!key) {
+        if (!key || !isLikelyCompanyName(item.company_name)) {
           metrics.records_rejected += 1;
           metrics.rejection_reasons.EMPTY_COMPANY_NAME =
             (metrics.rejection_reasons.EMPTY_COMPANY_NAME ?? 0) + 1;
           continue;
         }
+
 
         const line = evidenceLineFor(src.markdown, item.company_name);
         const evidenceText = item.evidence_text?.trim() || line?.text || null;
