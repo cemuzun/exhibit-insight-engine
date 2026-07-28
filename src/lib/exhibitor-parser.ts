@@ -38,7 +38,7 @@ const NAV_NOISE = new Set(
   ].map((s) => s.toLowerCase()),
 );
 
-function isLikelyCompanyName(value: string): boolean {
+export function isLikelyCompanyName(value: string): boolean {
   const name = cleanCompanyName(value);
   if (name.length < 2 || name.length > 100) return false;
   const lower = name.toLowerCase().replace(/[^a-z0-9& ]+/g, " ").replace(/\s+/g, " ").trim();
