@@ -3,6 +3,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { useQuery } from "@tanstack/react-query";
 import { useState, useMemo } from "react";
 import { getRun } from "@/lib/research.functions";
+import { syncRunToCrm } from "@/lib/crm.functions";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/runs/$runId")({
