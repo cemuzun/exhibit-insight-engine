@@ -87,12 +87,21 @@ export function ExhibitorsTable({ rows }: { rows: ExhibitorRow[] }) {
           <input type="checkbox" checked={onlyBooth} onChange={(e) => setOnlyBooth(e.target.checked)} />
           Only with booth number
         </label>
+        <button
+          type="button"
+          onClick={exportCsv}
+          disabled={totalShown === 0}
+          className="rounded-md border border-border px-3 py-1.5 text-xs hover:bg-muted/40 disabled:opacity-50"
+        >
+          Export CSV
+        </button>
         <div className="ml-auto text-xs text-muted-foreground">
           <span className="font-mono text-foreground">{totalShown}</span> exhibitors ·{" "}
           <span className="font-mono text-foreground">{totalBooths}</span> with booth ·{" "}
           <span className="font-mono text-foreground">{groups.length}</span> shows
         </div>
       </div>
+
 
       {groups.length === 0 ? (
         <p className="p-8 text-center text-sm text-muted-foreground">No exhibitors extracted yet.</p>
