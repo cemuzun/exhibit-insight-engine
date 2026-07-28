@@ -157,8 +157,26 @@ if (packageOk && envOk) {
       console.log(`  ✓ ${pad(e.name, 28)} ${e.description}`);
     }
   }
+
+  // ---- Database schema check --------------------------------------------
+  const skipSchema =
+    skipEnv || flags.includes("--no-schema") || process.env.PREFLIGHT_SKIP_SCHEMA === "1";
+  if (!skipSchema) {
+    let schema;
+    try {
+      schema = await import("./check-schema.mjs");
+    } catch {
+      schema = null; // schema checker unavailable — treat as skipped
+    }
+    if (schema) {
+      const schemaOk = schema.reportSchema(await schema.checkSchema());
+      if (!schemaOk) process.exit(1);
+    }
+  }
+
   process.exit(0);
 }
+
 
 if (!packageOk) {
   if (pinProblems.length > 0) {
