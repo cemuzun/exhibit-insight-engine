@@ -185,6 +185,7 @@ export const getRun = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) => z.object({ runId: z.string().uuid() }).parse(input))
   .handler(async ({ data, context }) => {
+    await failStalledRuns(context.supabase);
     const [{ data: run, error: runErr }, { data: events }, { data: leads }] = await Promise.all([
       context.supabase.from("research_runs").select("*").eq("id", data.runId).maybeSingle(),
       context.supabase.from("events").select("*").eq("run_id", data.runId).order("event_opportunity_score", { ascending: false }),
