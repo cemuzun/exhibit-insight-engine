@@ -11,18 +11,9 @@ const here = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(resolve(here, "../package.json"), "utf8"));
 
 // Packages this app needs at runtime beyond framework defaults.
-const REQUIRED = [
-  "ai",
-  "@ai-sdk/openai-compatible",
-  "zod",
-  "@supabase/supabase-js",
-  "lucide-react",
-  "sonner",
-  "recharts",
-  "date-fns",
-  "react-hook-form",
-  "@hookform/resolvers",
-];
+// Shared with scripts/install-required.sh.
+import { REQUIRED } from "./required-packages.mjs";
+
 
 function expectedVersion(name) {
   return pkg.dependencies?.[name] ?? pkg.devDependencies?.[name] ?? null;
