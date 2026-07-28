@@ -4,6 +4,8 @@ import { useQuery } from "@tanstack/react-query";
 import { useState, useMemo } from "react";
 import { getRun } from "@/lib/research.functions";
 import { syncRunToCrm } from "@/lib/crm.functions";
+import { CrmSyncPreview } from "@/components/CrmSyncPreview";
+
 import { listEmailTemplates } from "@/lib/templates.functions";
 import { renderForLead, type EmailTemplate } from "@/lib/email-template-engine";
 import { toast } from "sonner";
