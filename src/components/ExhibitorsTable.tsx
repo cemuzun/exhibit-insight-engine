@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 
 export type ExhibitorRow = {
   id: string;
@@ -43,10 +43,25 @@ function csvCell(value: string) {
 }
 
 
-export function ExhibitorsTable({ rows }: { rows: ExhibitorRow[] }) {
+export function ExhibitorsTable({
+  rows,
+  inProgress = false,
+  lastUpdated,
+}: {
+  rows: ExhibitorRow[];
+  inProgress?: boolean;
+  lastUpdated?: string | null;
+}) {
   const [query, setQuery] = useState("");
   const [onlyBooth, setOnlyBooth] = useState(false);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const [now, setNow] = useState(Date.now());
+
+  useEffect(() => {
+    if (!inProgress) return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [inProgress]);
 
   const groups = useMemo(() => {
     const q = query.trim().toLowerCase();
