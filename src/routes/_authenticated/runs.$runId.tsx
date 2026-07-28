@@ -241,13 +241,8 @@ function RunDetail() {
         />
       )}
 
-      {inProgress && (
-        <ScoringFeed
-          entries={
-            (((run as { counters?: { scoring_feed?: unknown } }).counters?.scoring_feed ?? []) as ScoringFeedEntry[])
-          }
-        />
-      )}
+
+
 
       <div className="mb-6">
         <DebugPanel

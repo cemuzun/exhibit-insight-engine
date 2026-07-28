@@ -19,6 +19,7 @@ import { Route as AuthenticatedSettingsScoringRouteImport } from './routes/_auth
 import { Route as AuthenticatedRunsNewRouteImport } from './routes/_authenticated/runs.new'
 import { Route as AuthenticatedRunsRunIdRouteImport } from './routes/_authenticated/runs.$runId'
 import { Route as AuthenticatedOutreachRunIdRouteImport } from './routes/_authenticated/outreach.$runId'
+import { Route as AuthenticatedRunsRunIdActivityRouteImport } from './routes/_authenticated/runs.$runId.activity'
 
 const AuthRoute = AuthRouteImport.update({
   id: '/auth',
@@ -71,6 +72,12 @@ const AuthenticatedOutreachRunIdRoute =
     path: '/outreach/$runId',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedRunsRunIdActivityRoute =
+  AuthenticatedRunsRunIdActivityRouteImport.update({
+    id: '/activity',
+    path: '/activity',
+    getParentRoute: () => AuthenticatedRunsRunIdRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -79,9 +86,10 @@ export interface FileRoutesByFullPath {
   '/digests': typeof AuthenticatedDigestsRoute
   '/templates': typeof AuthenticatedTemplatesRoute
   '/outreach/$runId': typeof AuthenticatedOutreachRunIdRoute
-  '/runs/$runId': typeof AuthenticatedRunsRunIdRoute
+  '/runs/$runId': typeof AuthenticatedRunsRunIdRouteWithChildren
   '/runs/new': typeof AuthenticatedRunsNewRoute
   '/settings/scoring': typeof AuthenticatedSettingsScoringRoute
+  '/runs/$runId/activity': typeof AuthenticatedRunsRunIdActivityRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -90,9 +98,10 @@ export interface FileRoutesByTo {
   '/digests': typeof AuthenticatedDigestsRoute
   '/templates': typeof AuthenticatedTemplatesRoute
   '/outreach/$runId': typeof AuthenticatedOutreachRunIdRoute
-  '/runs/$runId': typeof AuthenticatedRunsRunIdRoute
+  '/runs/$runId': typeof AuthenticatedRunsRunIdRouteWithChildren
   '/runs/new': typeof AuthenticatedRunsNewRoute
   '/settings/scoring': typeof AuthenticatedSettingsScoringRoute
+  '/runs/$runId/activity': typeof AuthenticatedRunsRunIdActivityRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -103,9 +112,10 @@ export interface FileRoutesById {
   '/_authenticated/digests': typeof AuthenticatedDigestsRoute
   '/_authenticated/templates': typeof AuthenticatedTemplatesRoute
   '/_authenticated/outreach/$runId': typeof AuthenticatedOutreachRunIdRoute
-  '/_authenticated/runs/$runId': typeof AuthenticatedRunsRunIdRoute
+  '/_authenticated/runs/$runId': typeof AuthenticatedRunsRunIdRouteWithChildren
   '/_authenticated/runs/new': typeof AuthenticatedRunsNewRoute
   '/_authenticated/settings/scoring': typeof AuthenticatedSettingsScoringRoute
+  '/_authenticated/runs/$runId/activity': typeof AuthenticatedRunsRunIdActivityRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -119,6 +129,7 @@ export interface FileRouteTypes {
     | '/runs/$runId'
     | '/runs/new'
     | '/settings/scoring'
+    | '/runs/$runId/activity'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -130,6 +141,7 @@ export interface FileRouteTypes {
     | '/runs/$runId'
     | '/runs/new'
     | '/settings/scoring'
+    | '/runs/$runId/activity'
   id:
     | '__root__'
     | '/'
@@ -142,6 +154,7 @@ export interface FileRouteTypes {
     | '/_authenticated/runs/$runId'
     | '/_authenticated/runs/new'
     | '/_authenticated/settings/scoring'
+    | '/_authenticated/runs/$runId/activity'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -222,15 +235,36 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedOutreachRunIdRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/runs/$runId/activity': {
+      id: '/_authenticated/runs/$runId/activity'
+      path: '/activity'
+      fullPath: '/runs/$runId/activity'
+      preLoaderRoute: typeof AuthenticatedRunsRunIdActivityRouteImport
+      parentRoute: typeof AuthenticatedRunsRunIdRoute
+    }
   }
 }
+
+interface AuthenticatedRunsRunIdRouteChildren {
+  AuthenticatedRunsRunIdActivityRoute: typeof AuthenticatedRunsRunIdActivityRoute
+}
+
+const AuthenticatedRunsRunIdRouteChildren: AuthenticatedRunsRunIdRouteChildren =
+  {
+    AuthenticatedRunsRunIdActivityRoute: AuthenticatedRunsRunIdActivityRoute,
+  }
+
+const AuthenticatedRunsRunIdRouteWithChildren =
+  AuthenticatedRunsRunIdRoute._addFileChildren(
+    AuthenticatedRunsRunIdRouteChildren,
+  )
 
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
   AuthenticatedDigestsRoute: typeof AuthenticatedDigestsRoute
   AuthenticatedTemplatesRoute: typeof AuthenticatedTemplatesRoute
   AuthenticatedOutreachRunIdRoute: typeof AuthenticatedOutreachRunIdRoute
-  AuthenticatedRunsRunIdRoute: typeof AuthenticatedRunsRunIdRoute
+  AuthenticatedRunsRunIdRoute: typeof AuthenticatedRunsRunIdRouteWithChildren
   AuthenticatedRunsNewRoute: typeof AuthenticatedRunsNewRoute
   AuthenticatedSettingsScoringRoute: typeof AuthenticatedSettingsScoringRoute
 }
@@ -240,7 +274,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedDigestsRoute: AuthenticatedDigestsRoute,
   AuthenticatedTemplatesRoute: AuthenticatedTemplatesRoute,
   AuthenticatedOutreachRunIdRoute: AuthenticatedOutreachRunIdRoute,
-  AuthenticatedRunsRunIdRoute: AuthenticatedRunsRunIdRoute,
+  AuthenticatedRunsRunIdRoute: AuthenticatedRunsRunIdRouteWithChildren,
   AuthenticatedRunsNewRoute: AuthenticatedRunsNewRoute,
   AuthenticatedSettingsScoringRoute: AuthenticatedSettingsScoringRoute,
 }
