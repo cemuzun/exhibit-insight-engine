@@ -1,5 +1,5 @@
 import { firecrawlLimiter, guarded, RateLimitError } from "./rate-limit.server";
-import { withCache } from "./firecrawl-cache.server";
+import { withCache, type CacheOptions } from "./firecrawl-cache.server";
 
 const FIRECRAWL_V2 = "https://api.firecrawl.dev/v2";
 
@@ -67,11 +67,13 @@ type ScrapeResult = {
   html?: string;
   links?: string[];
   metadata?: { title?: string; description?: string; sourceURL?: string; statusCode?: number };
+  /** true when the page came from the cache instead of a fresh fetch */
+  fromCache?: boolean;
 };
 
 export async function firecrawlScrape(
   url: string,
-  opts?: { formats?: string[]; onlyMainContent?: boolean; waitFor?: number },
+  opts?: { formats?: string[]; onlyMainContent?: boolean; waitFor?: number; cache?: CacheOptions },
 ): Promise<ScrapeResult> {
   const payload = {
     url,
@@ -79,10 +81,11 @@ export async function firecrawlScrape(
     onlyMainContent: opts?.onlyMainContent ?? true,
     waitFor: opts?.waitFor,
   };
-  const { value: body } = await withCache<({ data?: ScrapeResult } & ScrapeResult) | null>(
+  const { value: body, cached } = await withCache<({ data?: ScrapeResult } & ScrapeResult) | null>(
     "scrape",
     payload,
     () => firecrawlPost<({ data?: ScrapeResult } & ScrapeResult) | null>("/scrape", payload, "scrape"),
+    opts?.cache ?? {},
   );
   const b = body ?? {};
   // v2 sometimes nests under data
@@ -91,12 +94,13 @@ export async function firecrawlScrape(
     html: b.html ?? b.data?.html,
     links: b.links ?? b.data?.links,
     metadata: b.metadata ?? b.data?.metadata,
+    fromCache: cached,
   };
 }
 
 export async function firecrawlSearch(
   query: string,
-  opts?: { limit?: number; scrapeMarkdown?: boolean },
+  opts?: { limit?: number; scrapeMarkdown?: boolean; cache?: CacheOptions },
 ): Promise<Array<{ url: string; title?: string; description?: string; markdown?: string }>> {
   const payload = {
     query,
@@ -107,6 +111,7 @@ export async function firecrawlSearch(
     "search",
     payload,
     () => firecrawlPost<{ data?: unknown; web?: unknown } | null>("/search", payload, "search"),
+    opts?.cache ?? {},
   );
   const b = body ?? {};
   const arr = (Array.isArray(b.data) ? b.data : Array.isArray(b.web) ? b.web : []) as Array<{
