@@ -1485,6 +1485,8 @@ ${sourceLinks.slice(0, 80).join("\n")}`,
       } catch {
         // keep the raw string
       }
+      if (debugEntry.pages.length < 40) debugEntry.pages.push({ url: sourceUrl, added });
+      debugEntry.exhibitors += added;
       await bumpCounters({
         exhibitor_pages_parsed: counters.exhibitor_pages_parsed + 1,
         exhibitor_pages_with_hits: counters.exhibitor_pages_with_hits + (added > 0 ? 1 : 0),
@@ -1493,7 +1495,9 @@ ${sourceLinks.slice(0, 80).join("\n")}`,
           ? { last_exhibitor_at: new Date().toISOString(), last_exhibitor_source: host }
           : {}),
       });
+      await saveDebug();
     };
+
 
     for (const src of sources) {
       const deterministic = parseExhibitorsFromMarkdown(src.markdown, src.url, extractBatch);
