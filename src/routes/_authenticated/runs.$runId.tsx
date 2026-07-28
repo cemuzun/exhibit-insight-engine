@@ -168,7 +168,7 @@ function RunDetail() {
   const typedLeads = filterLeads(allLeads, filters);
   const industries = industryOptions(allLeads);
   const windowDays = filters.window === "all" ? null : Number(filters.window);
-  const visibleEvents = events.filter((e) => {
+  const visibleEvents = events.filter((e: any) => {
     if (filters.industry !== "all" && ((e as { industry?: string | null }).industry ?? "Unspecified") !== filters.industry) return false;
     if (windowDays == null) return true;
     const d = parseShowDate(e.start_date);

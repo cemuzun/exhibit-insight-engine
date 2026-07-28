@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
+import { fetchAllRows } from "./fetch-all";
 
 const CreateInput = z.object({
   inputUrl: z.string().url(),
@@ -10,7 +11,7 @@ const CreateInput = z.object({
   maxLeadsPerShow: z.number().int().min(1).max(30).default(10),
   startDateFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullish(),
   startDateTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullish(),
-  maxEvents: z.number().int().min(1).max(5000).default(2000),
+  maxEvents: z.number().int().min(1).max(5000).default(5000),
   maxDirectoryPages: z.number().int().min(1).max(50).default(25),
   /** Reuse directory pages fetched within this many hours (0 = always refetch). */
   pageReuseHours: z.number().int().min(0).max(720).default(24),
@@ -329,10 +330,14 @@ export const getRun = createServerFn({ method: "GET" })
   .inputValidator((input: unknown) => z.object({ runId: z.string().uuid() }).parse(input))
   .handler(async ({ data, context }) => {
     await failStalledRuns(context.supabase);
-    const [{ data: run, error: runErr }, { data: events }, { data: leads }] = await Promise.all([
+    const [{ data: run, error: runErr }, events, leads] = await Promise.all([
       context.supabase.from("research_runs").select("*").eq("id", data.runId).maybeSingle(),
-      context.supabase.from("events").select("*").eq("run_id", data.runId).order("event_opportunity_score", { ascending: false }),
-      context.supabase.from("leads").select("*").eq("run_id", data.runId).order("lead_score", { ascending: false }),
+      fetchAllRows<any>(() =>
+        context.supabase.from("events").select("*").eq("run_id", data.runId).order("event_opportunity_score", { ascending: false }),
+      ),
+      fetchAllRows<any>(() =>
+        context.supabase.from("leads").select("*").eq("run_id", data.runId).order("lead_score", { ascending: false }),
+      ),
     ]);
     if (runErr) throw new Error(runErr.message);
     if (!run) return { run: null, events: [], leads: [] };
