@@ -84,6 +84,18 @@ function RunDetail() {
 
   if (isLoading || !data) return <main className="mx-auto max-w-7xl px-6 py-8"><p className="text-sm text-muted-foreground">Loading…</p></main>;
 
+  if (!data.run) {
+    return (
+      <main className="mx-auto max-w-7xl px-6 py-8">
+        <Link to="/dashboard" className="text-xs text-muted-foreground hover:text-foreground">← All runs</Link>
+        <h1 className="mt-3 text-2xl font-semibold tracking-tight">Run not found</h1>
+        <p className="mt-2 text-sm text-muted-foreground">
+          This research run no longer exists — it may have been deleted.
+        </p>
+      </main>
+    );
+  }
+
   const { run, events, leads } = data;
   const typedLeads = leads as unknown as Lead[];
   const es = (run.executive_summary ?? null) as {
