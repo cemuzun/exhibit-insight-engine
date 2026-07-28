@@ -7,6 +7,7 @@ import { getRun, rerunResearch } from "@/lib/research.functions";
 import { syncRunToCrm } from "@/lib/crm.functions";
 import { CrmSyncPreview } from "@/components/CrmSyncPreview";
 import { RunProgress, RunTimings, type StepEntry, type RunCounters } from "@/components/RunProgress";
+import { ScoringFeed, type ScoringFeedEntry } from "@/components/ScoringFeed";
 
 import { listEmailTemplates } from "@/lib/templates.functions";
 import { renderForLead, type EmailTemplate } from "@/lib/email-template-engine";
