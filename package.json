@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "verify:ai": "node scripts/preflight.mjs",
+    "typecheck": "tsc --noEmit",
     "dev": "npm run verify:ai && vite dev",
     "build": "npm run verify:ai && vite build",
     "build:dev": "npm run verify:ai && vite build --mode development",
