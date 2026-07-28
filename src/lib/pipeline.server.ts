@@ -248,6 +248,49 @@ ${lastText.slice(0, 20000)}`,
 
 type ProgressFn = (stage: string, message: string) => Promise<void>;
 
+const EXHIBITOR_LINK_RE =
+  /(exhibitor|exhibit)[-_/]?(list|directory|search|hall|floor ?plan|showcase)|\/exhibitors?\b|who-?s-?exhibiting/i;
+
+function looksLikeExhibitorContent(markdown: string): boolean {
+  if (markdown.length < 400) return false;
+  const hits = (markdown.match(/booth|stand\s?#|exhibitor/gi) ?? []).length;
+  return hits >= 3;
+}
+
+/**
+ * Event homepages almost never list exhibitors. Follow links that look like an
+ * exhibitor directory, and fall back to a web search, before giving up.
+ */
+async function findExhibitorListSource(
+  officialUrl: string,
+  eventName: string,
+): Promise<{ url: string; markdown: string } | null> {
+  const home = await firecrawlScrape(officialUrl, { formats: ["markdown", "links"] }).catch(() => null);
+
+  const candidates: string[] = [];
+  for (const link of home?.links ?? []) {
+    if (EXHIBITOR_LINK_RE.test(link)) candidates.push(link);
+    if (candidates.length >= 3) break;
+  }
+
+  if (candidates.length === 0) {
+    const results = await firecrawlSearch(`${eventName} exhibitor list directory`, { limit: 3 }).catch(
+      () => [] as Array<{ url: string }>,
+    );
+    for (const r of results) if (r.url) candidates.push(r.url);
+  }
+
+  for (const url of candidates.slice(0, 3)) {
+    const page = await firecrawlScrape(url, { formats: ["markdown"] }).catch(() => null);
+    const md = page?.markdown ?? "";
+    if (looksLikeExhibitorContent(md)) return { url, markdown: md };
+  }
+
+  const homeMd = home?.markdown ?? "";
+  if (looksLikeExhibitorContent(homeMd)) return { url: officialUrl, markdown: homeMd };
+  return null;
+}
+
 export async function runPipeline(
   runId: string,
   input: {
