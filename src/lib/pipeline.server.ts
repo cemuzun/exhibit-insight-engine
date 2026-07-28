@@ -1047,17 +1047,27 @@ TASK:
           boothNumber: ex.booth_number ?? null,
         };
         allLeads.push(entry);
+        const row = buildLeadRow(runId, input.inputUrl, entry);
         // Stream the lead into the database immediately so the UI can show it live.
         try {
-          await admin.from("leads").insert(buildLeadRow(runId, input.inputUrl, entry));
+          await admin.from("leads").insert(row);
         } catch {
           // non-fatal; the row is still counted in the summary
         }
         await bumpCounters({ leads_scored: counters.leads_scored + 1 });
+        await pushScoringEntry(explainLeadScore(row));
 
       } catch (e) {
         limitations.push(`Could not analyze ${ex.company_name}: ${(e as Error).message}`);
+        await pushScoringEntry({
+          at: new Date().toISOString(),
+          company: ex.company_name,
+          show: ev.event_name,
+          status: "skipped",
+          reason: `Skipped — analysis failed: ${(e as Error).message}`,
+        });
       }
+
 
       completed++;
       await progress(
