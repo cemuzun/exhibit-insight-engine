@@ -19,14 +19,16 @@ describe("EventSchema", () => {
     expect(EventSchema.parse(base)).toMatchObject({ event_name: "CES 2026" });
   });
 
-  it("rejects scores out of range", () => {
-    expect(() => EventSchema.parse({ ...base, event_opportunity_score: 101 })).toThrow();
-    expect(() => EventSchema.parse({ ...base, event_opportunity_score: -1 })).toThrow();
+  it("tolerates out-of-range scores (clamped later in the pipeline)", () => {
+    expect(EventSchema.parse({ ...base, event_opportunity_score: 101 }).event_opportunity_score).toBe(101);
+    expect(EventSchema.parse({ ...base, event_opportunity_score: "77" }).event_opportunity_score).toBe(77);
   });
 
-  it("requires rationale", () => {
-    const { rationale: _r, ...rest } = base;
-    expect(() => EventSchema.parse(rest)).toThrow();
+  it("defaults a missing score and outreach phase instead of failing", () => {
+    const { event_opportunity_score: _s, recommended_outreach_phase: _p, ...rest } = base;
+    const parsed = EventSchema.parse(rest);
+    expect(parsed.event_opportunity_score).toBe(50);
+    expect(parsed.recommended_outreach_phase).toBe("EARLY_PLANNING");
   });
 });
 
@@ -44,7 +46,7 @@ describe("EventListSchema", () => {
 });
 
 describe("ExhibitorListSchema", () => {
-  it("validates nested exhibitors and rejects bad shapes", () => {
+  it("validates nested exhibitors and tolerates sparse shapes", () => {
     const ok = ExhibitorListSchema.parse({
       exhibitors: [{ company_name: "Acme", normalized_company_name: "acme" }],
       total_found: 1,
@@ -53,19 +55,18 @@ describe("ExhibitorListSchema", () => {
     });
     expect(ok.exhibitors[0].company_name).toBe("Acme");
 
-    expect(() =>
-      ExhibitorListSchema.parse({
-        exhibitors: [{ company_name: "Acme" }],
-        total_found: 1,
-        extraction_complete: true,
-        limitations: [],
-      }),
-    ).toThrow();
+    const sparse = ExhibitorListSchema.parse({
+      exhibitors: [{ company_name: "Acme" }],
+      total_found: 1,
+      extraction_complete: true,
+      limitations: [],
+    });
+    expect(sparse.exhibitors).toHaveLength(1);
   });
 });
 
 describe("ScoreBreakdownSchema", () => {
-  it("requires all 9 components", () => {
+  it("parses all 9 components and defaults missing ones to 0", () => {
     const full = {
       trade_show_activity: 10,
       booth_scale_complexity: 10,
@@ -79,7 +80,7 @@ describe("ScoreBreakdownSchema", () => {
     };
     expect(ScoreBreakdownSchema.parse(full)).toEqual(full);
     const { timing: _t, ...missing } = full;
-    expect(() => ScoreBreakdownSchema.parse(missing)).toThrow();
+    expect(ScoreBreakdownSchema.parse(missing).timing).toBe(0);
   });
 });
 
