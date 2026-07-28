@@ -372,6 +372,12 @@ export async function runPipeline(
     filters: {
       minProjectValue?: number;
       maxLeadsPerShow?: number;
+      /** Max shows kept from a directory (default 500). */
+      maxEvents?: number;
+      /** Max extra paginated directory pages to fetch (default 25). */
+      maxDirectoryPages?: number;
+      /** Max shows to deep-dive for exhibitors/leads (default 4). */
+      maxDeepDiveShows?: number;
       priorityIndustries?: string[];
       targetServices?: string[];
       /** Optional per-run tuning of parallelism / request rates. */
