@@ -63,12 +63,38 @@ async function alphaChars(base: string): Promise<string[]> {
   const body = await getJson<{ DATA?: Array<{ value?: string; count?: number }> }>(
     `${base}/ajax/remote-proxy.cfm?action=getsearchoptions&function=getexhibitoralphachars`,
   );
-  const chars = (body?.DATA ?? [])
+  return (body?.DATA ?? [])
     .map((d) => d.value)
     .filter((v): v is string => typeof v === "string" && v.length > 0);
-  if (chars.length > 0) return chars;
-  return ["0", ...Array.from({ length: 26 }, (_, i) => String.fromCharCode(65 + i))];
 }
+
+const DEFAULT_ALPHA = ["0", ...Array.from({ length: 26 }, (_, i) => String.fromCharCode(65 + i))];
+
+/**
+ * Big shows keep their exhibitor directory on a MapYourShow subdomain that the
+ * event homepage may never link in plain HTML (directory.imts.com,
+ * exhibitors.<show>.com, …). Probe the handful of conventional hosts and app
+ * roots directly — each check is a single cheap JSON request.
+ */
+export async function discoverMapYourShowBase(officialUrl: string): Promise<string | null> {
+  let host: string;
+  try {
+    host = new URL(officialUrl).hostname;
+  } catch {
+    return null;
+  }
+  const root = host.replace(/^www\./i, "");
+  const hosts = [host, root, `directory.${root}`, `exhibitors.${root}`, `directory.${host}`];
+  const versions = ["8_0", "7_0"];
+  const bases = Array.from(
+    new Set(hosts.flatMap((h) => versions.map((v) => `https://${h}/${v}`))),
+  );
+  const found = await Promise.all(
+    bases.map(async (base) => ((await alphaChars(base)).length > 0 ? base : null)),
+  );
+  return found.find((b): b is string => b !== null) ?? null;
+}
+
 
 async function fetchLetter(base: string, letter: string, size: number): Promise<Hit[]> {
   const url =
