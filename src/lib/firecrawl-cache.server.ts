@@ -2,7 +2,7 @@
 // Two layers: an in-process LRU-ish map (fast, survives retries within a run)
 // and a Postgres table (survives across runs / server instances).
 
-type CacheRow = { response: unknown; expires_at: string; created_at: string };
+type CacheRow = { request?: unknown; response: unknown; expires_at: string; created_at: string };
 
 const MEM_MAX = 300;
 const mem = new Map<string, { value: unknown; expiresAt: number; storedAt: number }>();
@@ -156,4 +156,59 @@ export async function withCache<T>(
   const value = await fn();
   await cacheSet(key, kind, request, value, opts.ttlMs ?? cacheTtlMs(kind));
   return { value, cached: false };
+}
+
+function cachedMarkdown(response: unknown): string {
+  const body = (response ?? {}) as { markdown?: unknown; data?: { markdown?: unknown } };
+  const markdown = typeof body.markdown === "string" ? body.markdown : body.data?.markdown;
+  return typeof markdown === "string" ? markdown : "";
+}
+
+function cachedUrl(request: unknown): string | null {
+  const body = (request ?? {}) as { url?: unknown };
+  return typeof body.url === "string" ? body.url : null;
+}
+
+export async function recentCachedScrapesForHost(
+  host: string,
+  opts: { limit?: number; maxAgeMs?: number } = {},
+): Promise<Array<{ url: string; markdown: string }>> {
+  if (cacheDisabled()) return [];
+  try {
+    const db = await admin();
+    const { data } = await db
+      .from("firecrawl_cache" as never)
+      .select("request, response, expires_at, created_at")
+      .eq("kind", "scrape" as never)
+      .order("created_at", { ascending: false })
+      .limit(Math.max(20, Math.min(200, opts.limit ?? 80)));
+    const rows = (data ?? []) as CacheRow[];
+    const out: Array<{ url: string; markdown: string }> = [];
+    const seen = new Set<string>();
+    for (const row of rows) {
+      const expiresAt = Date.parse(row.expires_at);
+      if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) continue;
+      if (opts.maxAgeMs !== undefined) {
+        const createdAt = Date.parse(row.created_at);
+        if (Number.isFinite(createdAt) && Date.now() - createdAt > opts.maxAgeMs) continue;
+      }
+      const url = cachedUrl(row.request);
+      if (!url || seen.has(url)) continue;
+      let parsed: URL;
+      try {
+        parsed = new URL(url);
+      } catch {
+        continue;
+      }
+      if (parsed.hostname !== host) continue;
+      const markdown = cachedMarkdown(row.response);
+      if (!markdown) continue;
+      seen.add(url);
+      out.push({ url, markdown });
+      if (out.length >= (opts.limit ?? 20)) break;
+    }
+    return out;
+  } catch {
+    return [];
+  }
 }
