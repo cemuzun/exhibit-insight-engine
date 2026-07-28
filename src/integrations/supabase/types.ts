@@ -112,55 +112,100 @@ export type Database = {
           city: string | null
           country: string | null
           created_at: string
+          days_until_event: number | null
           end_date: string | null
           event_name: string
           event_opportunity_score: number | null
+          event_score: number | null
+          event_score_breakdown: Json | null
+          event_year: number | null
+          excluded: boolean
+          exclusion_reason: string | null
+          exhibitor_directory_status: string
+          extraction_metrics: Json | null
           id: string
           industry: string | null
+          official_event_url: string | null
           official_url: string | null
           raw: Json | null
           recommended_outreach_phase: string | null
           run_id: string
+          scoring_mode: string
           source_urls: string[]
           start_date: string | null
           state: string | null
           venue: string | null
+          verification_checked_at: string | null
+          verification_confidence: number | null
+          verification_notes: string | null
+          verification_source_urls: string[]
+          verified_status: string
         }
         Insert: {
           city?: string | null
           country?: string | null
           created_at?: string
+          days_until_event?: number | null
           end_date?: string | null
           event_name: string
           event_opportunity_score?: number | null
+          event_score?: number | null
+          event_score_breakdown?: Json | null
+          event_year?: number | null
+          excluded?: boolean
+          exclusion_reason?: string | null
+          exhibitor_directory_status?: string
+          extraction_metrics?: Json | null
           id?: string
           industry?: string | null
+          official_event_url?: string | null
           official_url?: string | null
           raw?: Json | null
           recommended_outreach_phase?: string | null
           run_id: string
+          scoring_mode?: string
           source_urls?: string[]
           start_date?: string | null
           state?: string | null
           venue?: string | null
+          verification_checked_at?: string | null
+          verification_confidence?: number | null
+          verification_notes?: string | null
+          verification_source_urls?: string[]
+          verified_status?: string
         }
         Update: {
           city?: string | null
           country?: string | null
           created_at?: string
+          days_until_event?: number | null
           end_date?: string | null
           event_name?: string
           event_opportunity_score?: number | null
+          event_score?: number | null
+          event_score_breakdown?: Json | null
+          event_year?: number | null
+          excluded?: boolean
+          exclusion_reason?: string | null
+          exhibitor_directory_status?: string
+          extraction_metrics?: Json | null
           id?: string
           industry?: string | null
+          official_event_url?: string | null
           official_url?: string | null
           raw?: Json | null
           recommended_outreach_phase?: string | null
           run_id?: string
+          scoring_mode?: string
           source_urls?: string[]
           start_date?: string | null
           state?: string | null
           venue?: string | null
+          verification_checked_at?: string | null
+          verification_confidence?: number | null
+          verification_notes?: string | null
+          verification_source_urls?: string[]
+          verified_status?: string
         }
         Relationships: [
           {
@@ -201,122 +246,191 @@ export type Database = {
       }
       leads: {
         Row: {
+          account_key: string | null
+          blocked_reasons: string[]
           booth_analysis_confidence: number | null
           booth_number: string | null
           booth_size_estimate: string | null
           booth_type: string | null
           budget_currency: string | null
+          company_description: string | null
           company_name: string
           company_website: string | null
           confidence_level: string | null
+          conflicts: Json | null
+          country: string | null
           created_at: string
           crm_company_id: string | null
           crm_contact_ids: string[]
+          crm_deal_id: string | null
           crm_error: string | null
           crm_status: string
           crm_synced_at: string | null
           decision_makers: Json
+          displayed_company_name: string | null
           employee_range: string | null
           estimated_project_value_high: number | null
           estimated_project_value_low: number | null
           event_date: string | null
           event_id: string | null
+          event_year: number | null
+          evidence_hash: string | null
+          evidence_locator: Json | null
+          evidence_text: string | null
+          exhibitor_instance_key: string | null
+          extraction_confidence: number | null
+          extraction_method: string | null
+          found_at: string | null
+          hall: string | null
           id: string
           industry: string | null
+          last_confirmed_at: string | null
           lead_score: number
           linkedin_message: string | null
           normalized_company_name: string | null
           parent_company: string | null
           personalized_email: string | null
           priority_tier: string | null
+          product_category: string | null
+          profile_url: string | null
           raw: Json | null
           recommended_next_action: string | null
           recommended_outreach_date: string | null
           recommended_services: string[]
+          record_status: string
+          represented_brand: string | null
           revenue_range: string | null
           run_id: string
           score_breakdown: Json | null
+          source_type: string | null
           source_urls: string[]
+          sponsor_level: string | null
           trade_show: string | null
           unknown_fields: string[]
         }
         Insert: {
+          account_key?: string | null
+          blocked_reasons?: string[]
           booth_analysis_confidence?: number | null
           booth_number?: string | null
           booth_size_estimate?: string | null
           booth_type?: string | null
           budget_currency?: string | null
+          company_description?: string | null
           company_name: string
           company_website?: string | null
           confidence_level?: string | null
+          conflicts?: Json | null
+          country?: string | null
           created_at?: string
           crm_company_id?: string | null
           crm_contact_ids?: string[]
+          crm_deal_id?: string | null
           crm_error?: string | null
           crm_status?: string
           crm_synced_at?: string | null
           decision_makers?: Json
+          displayed_company_name?: string | null
           employee_range?: string | null
           estimated_project_value_high?: number | null
           estimated_project_value_low?: number | null
           event_date?: string | null
           event_id?: string | null
+          event_year?: number | null
+          evidence_hash?: string | null
+          evidence_locator?: Json | null
+          evidence_text?: string | null
+          exhibitor_instance_key?: string | null
+          extraction_confidence?: number | null
+          extraction_method?: string | null
+          found_at?: string | null
+          hall?: string | null
           id?: string
           industry?: string | null
+          last_confirmed_at?: string | null
           lead_score?: number
           linkedin_message?: string | null
           normalized_company_name?: string | null
           parent_company?: string | null
           personalized_email?: string | null
           priority_tier?: string | null
+          product_category?: string | null
+          profile_url?: string | null
           raw?: Json | null
           recommended_next_action?: string | null
           recommended_outreach_date?: string | null
           recommended_services?: string[]
+          record_status?: string
+          represented_brand?: string | null
           revenue_range?: string | null
           run_id: string
           score_breakdown?: Json | null
+          source_type?: string | null
           source_urls?: string[]
+          sponsor_level?: string | null
           trade_show?: string | null
           unknown_fields?: string[]
         }
         Update: {
+          account_key?: string | null
+          blocked_reasons?: string[]
           booth_analysis_confidence?: number | null
           booth_number?: string | null
           booth_size_estimate?: string | null
           booth_type?: string | null
           budget_currency?: string | null
+          company_description?: string | null
           company_name?: string
           company_website?: string | null
           confidence_level?: string | null
+          conflicts?: Json | null
+          country?: string | null
           created_at?: string
           crm_company_id?: string | null
           crm_contact_ids?: string[]
+          crm_deal_id?: string | null
           crm_error?: string | null
           crm_status?: string
           crm_synced_at?: string | null
           decision_makers?: Json
+          displayed_company_name?: string | null
           employee_range?: string | null
           estimated_project_value_high?: number | null
           estimated_project_value_low?: number | null
           event_date?: string | null
           event_id?: string | null
+          event_year?: number | null
+          evidence_hash?: string | null
+          evidence_locator?: Json | null
+          evidence_text?: string | null
+          exhibitor_instance_key?: string | null
+          extraction_confidence?: number | null
+          extraction_method?: string | null
+          found_at?: string | null
+          hall?: string | null
           id?: string
           industry?: string | null
+          last_confirmed_at?: string | null
           lead_score?: number
           linkedin_message?: string | null
           normalized_company_name?: string | null
           parent_company?: string | null
           personalized_email?: string | null
           priority_tier?: string | null
+          product_category?: string | null
+          profile_url?: string | null
           raw?: Json | null
           recommended_next_action?: string | null
           recommended_outreach_date?: string | null
           recommended_services?: string[]
+          record_status?: string
+          represented_brand?: string | null
           revenue_range?: string | null
           run_id?: string
           score_breakdown?: Json | null
+          source_type?: string | null
           source_urls?: string[]
+          sponsor_level?: string | null
           trade_show?: string | null
           unknown_fields?: string[]
         }
@@ -389,64 +503,88 @@ export type Database = {
       }
       outreach_emails: {
         Row: {
+          blocked_reasons: string[]
           body: string
           company_name: string
           created_at: string
+          draft_status: string
           error: string | null
+          follow_up_date: string | null
           id: string
           lead_id: string
           lead_score: number
+          outreach_phase: string | null
+          personalization_fact: Json | null
           priority_tier: string | null
           recipient_email: string
           recipient_name: string | null
           recipient_title: string | null
+          recommended_send_date: string | null
           run_id: string
           sent_at: string | null
+          service_offered: string | null
           status: string
           subject: string
           template_name: string | null
           updated_at: string
           user_id: string
+          validation: Json | null
         }
         Insert: {
+          blocked_reasons?: string[]
           body?: string
           company_name: string
           created_at?: string
+          draft_status?: string
           error?: string | null
+          follow_up_date?: string | null
           id?: string
           lead_id: string
           lead_score?: number
+          outreach_phase?: string | null
+          personalization_fact?: Json | null
           priority_tier?: string | null
           recipient_email: string
           recipient_name?: string | null
           recipient_title?: string | null
+          recommended_send_date?: string | null
           run_id: string
           sent_at?: string | null
+          service_offered?: string | null
           status?: string
           subject?: string
           template_name?: string | null
           updated_at?: string
           user_id: string
+          validation?: Json | null
         }
         Update: {
+          blocked_reasons?: string[]
           body?: string
           company_name?: string
           created_at?: string
+          draft_status?: string
           error?: string | null
+          follow_up_date?: string | null
           id?: string
           lead_id?: string
           lead_score?: number
+          outreach_phase?: string | null
+          personalization_fact?: Json | null
           priority_tier?: string | null
           recipient_email?: string
           recipient_name?: string | null
           recipient_title?: string | null
+          recommended_send_date?: string | null
           run_id?: string
           sent_at?: string | null
+          service_offered?: string | null
           status?: string
           subject?: string
           template_name?: string | null
           updated_at?: string
           user_id?: string
+          validation?: Json | null
         }
         Relationships: [
           {

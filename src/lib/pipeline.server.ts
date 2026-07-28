@@ -28,6 +28,21 @@ import {
   type EventRecord,
   type LeadRecord,
 } from "./pipeline-schemas";
+import { verifyEvent } from "./verification.server";
+import { compareForProcessing, exclusionReason, type EventVerifiedStatus } from "./verification";
+import { recommendedAction, scoreEvent, SPEC_EVENT_SCORING } from "./event-scoring";
+import { pipelineLog, type PipelineLogEntry } from "./pipeline-log";
+import {
+  capConfidence,
+  checkEvidence,
+  emptyMetrics,
+  evidenceHash,
+  finalizeMetrics,
+  MIN_RECORD_EXTRACTION_CONFIDENCE,
+  type ExhibitorSourceType,
+  type ExtractionMethod,
+} from "./evidence";
+import { accountKey, dedupeExhibitorInstances, exhibitorInstanceKey } from "./exhibitor-dedupe";
 
 const EXTRACT_MODEL = "google/gemini-3.6-flash";
 const REASON_MODEL = "google/gemini-3.1-pro-preview";
@@ -180,7 +195,13 @@ type LeadEntry = {
   eventId: string;
   eventName: string;
   eventDate: string | null;
+  eventYear?: number | null;
   boothNumber: string | null;
+  /** Extraction provenance carried from the exhibitor record. */
+  provenance?: ExhibitorProvenance | null;
+  displayedCompanyName?: string | null;
+  hall?: string | null;
+  profileUrl?: string | null;
 };
 
 /** One live scoring decision streamed to the run UI as it happens. */
@@ -234,6 +255,45 @@ export function explainLeadScore(
 
 
 /** Deterministic scoring + tiering for one enriched exhibitor. */
+/** Provenance attached to every extracted exhibitor before it becomes a lead. */
+export type ExhibitorProvenance = {
+  source_url: string;
+  source_type: ExhibitorSourceType;
+  extraction_method: ExtractionMethod;
+  evidence_text: string | null;
+  evidence_locator: string | null;
+  evidence_hash: string | null;
+  extraction_confidence: number;
+  record_status: "CONFIRMED" | "UNCERTAIN";
+  exhibitor_instance_key: string;
+  account_key: string;
+};
+
+/** Classify a source URL into the spec's source-type ladder. */
+export function sourceTypeFor(url: string): ExhibitorSourceType {
+  if (/\.pdf($|\?)/i.test(url)) return "PDF";
+  if (/floor\s*plan|floorplan|map/i.test(url)) return "FLOOR_PLAN";
+  if (/exhibitor|exhibitors|exhibit-list|participants|vendors/i.test(url)) return "OFFICIAL_EXHIBITOR_DIRECTORY";
+  if (/mapyourshow|a2zinc|expocad|swapcard|eventscribe/i.test(url)) return "DIRECTORY_API";
+  return "ORGANIZER_PAGE";
+}
+
+/**
+ * The line of source content that names the company. This is the verbatim
+ * evidence we keep so a record can always be traced back to the page.
+ */
+export function evidenceLineFor(markdown: string, companyName: string): { text: string; line: number } | null {
+  const needle = companyName.trim().toLowerCase();
+  if (!needle) return null;
+  const lines = markdown.split(/\r?\n/);
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].toLowerCase().includes(needle)) {
+      return { text: lines[i].trim().slice(0, 500), line: i + 1 };
+    }
+  }
+  return null;
+}
+
 function buildLeadRow(
   runId: string,
   inputUrl: string,
@@ -241,6 +301,7 @@ function buildLeadRow(
   scoring: ScoringSettings = DEFAULT_SCORING,
 ) {
   const { lead, eventId, eventName, eventDate, boothNumber } = entry;
+  const provenance = entry.provenance ?? null;
   const { breakdown: b, total } = applyWeights(
     (lead.score_breakdown ?? {}) as Record<string, number>,
     scoring,
@@ -282,7 +343,21 @@ function buildLeadRow(
     linkedin_message: lead.linkedin_message ?? null,
     confidence_level: lead.confidence_level ?? "LOW",
     unknown_fields: lead.unknown_fields ?? [],
-    source_urls: [inputUrl],
+    source_urls: [inputUrl, provenance?.source_url].filter(Boolean) as string[],
+    displayed_company_name: entry.displayedCompanyName ?? null,
+    hall: entry.hall ?? null,
+    profile_url: entry.profileUrl ?? null,
+    event_year: entry.eventYear ?? null,
+    source_type: provenance?.source_type ?? null,
+    extraction_method: provenance?.extraction_method ?? null,
+    evidence_text: provenance?.evidence_text ?? null,
+    evidence_locator: provenance?.evidence_locator ?? null,
+    evidence_hash: provenance?.evidence_hash ?? null,
+    extraction_confidence: provenance?.extraction_confidence ?? null,
+    record_status: provenance?.record_status ?? "UNCERTAIN",
+    exhibitor_instance_key: provenance?.exhibitor_instance_key ?? null,
+    account_key: provenance?.account_key ?? null,
+    last_confirmed_at: provenance ? new Date().toISOString() : null,
     raw: lead,
   };
 }
@@ -889,6 +964,8 @@ export async function runPipeline(
       maxDeepDiveShows?: number;
       /** Skip shows starting sooner than this many days from now (default 45). */
       minLeadTimeDays?: number;
+      /** Process shows that could not be confirmed against their official site. */
+      allowUnverifiedEvents?: boolean;
       /** Only keep shows starting on or after this ISO date (YYYY-MM-DD). Overrides minLeadTimeDays. */
       startDateFrom?: string | null;
       /** Only keep shows starting on or before this ISO date (YYYY-MM-DD). */
@@ -963,6 +1040,10 @@ export async function runPipeline(
     /** Hostname of the page that produced the most recent exhibitors. */
     last_exhibitor_source: null as string | null,
     leads_scored: 0,
+    /** Shows confirmed against their official website. */
+    events_verified: 0,
+    /** Shows dropped by the verification gate. */
+    events_excluded: 0,
     pages_reused: 0,
     pages_fetched: 0,
     scoring_feed: [] as ScoringFeedEntry[],
@@ -1369,6 +1450,141 @@ ${sourceLinks.slice(0, 80).join("\n")}`,
 
   await admin.from("research_runs").update({ status: "analyzing" }).eq("id", runId);
 
+  // ---------------------------------------------------------------------
+  // Phase 1 — official-site verification and 8-component event scoring.
+  // No exhibitor work happens on an event that fails this gate.
+  // ---------------------------------------------------------------------
+  await progress("verify_events", `Verifying ${eventsInDb.length} show(s) against their official sites`);
+
+  const allowUnverified = input.filters.allowUnverifiedEvents === true;
+  const verificationLog: PipelineLogEntry[] = [];
+  let verifiedCount = 0;
+  let excludedCount = 0;
+
+  const verified = await mapPool(eventsInDb, Math.min(4, concurrency), async (ev) => {
+    const started = Date.now();
+    const { verification, extras } = await verifyEvent({
+      eventName: ev.event_name,
+      officialUrl: ev.official_url ?? null,
+      directoryStartDate: ev.start_date ?? null,
+      directoryEndDate: ev.end_date ?? null,
+      city: ev.city ?? null,
+      state: ev.state ?? null,
+      venue: ev.venue ?? null,
+      generate: (schema, prompt) => generateStructured(extractModel, schema as ZodLike<never>, prompt),
+    });
+
+    const { breakdown, mode } = scoreEvent(
+      {
+        exhibitorCount: extras.estimatedExhibitorCount,
+        averageCompanySize: null,
+        industry: ev.industry ?? null,
+        directoryStatus: verification.exhibitor_directory_status,
+        daysUntilEvent: verification.days_until_event,
+        serviceable: true,
+        recurring: extras.recurring,
+      },
+      SPEC_EVENT_SCORING,
+    );
+
+    const reason = exclusionReason({
+      status: verification.verified_status,
+      daysUntilEvent: verification.days_until_event,
+      hasIdentity: Boolean(verification.event_year || verification.start_date),
+      consumerOnly: extras.consumerOnly ?? undefined,
+      allowUnverified,
+    });
+
+    if (verification.verified_status === "CONFIRMED") verifiedCount += 1;
+    if (reason) excludedCount += 1;
+
+    await admin
+      .from("events")
+      .update({
+        event_year: verification.event_year,
+        verified_status: verification.verified_status,
+        exhibitor_directory_status: verification.exhibitor_directory_status,
+        days_until_event: verification.days_until_event,
+        official_event_url: verification.official_event_url,
+        verification_source_urls: verification.verification_source_urls,
+        verification_checked_at: verification.verification_checked_at,
+        verification_confidence: verification.verification_confidence,
+        verification_notes: verification.verification_notes,
+        start_date: verification.start_date ?? ev.start_date,
+        end_date: verification.end_date ?? ev.end_date,
+        city: verification.city ?? ev.city,
+        state: verification.state ?? ev.state,
+        venue: verification.venue ?? ev.venue,
+        event_score: breakdown.total,
+        event_score_breakdown: breakdown,
+        scoring_mode: mode,
+        event_opportunity_score: breakdown.total,
+        recommended_outreach_phase: ev.recommended_outreach_phase,
+        excluded: Boolean(reason),
+        exclusion_reason: reason,
+      })
+      .eq("id", ev.id);
+
+    verificationLog.push(
+      pipelineLog("EVENT_VERIFICATION", reason ? "BLOCKED" : "SUCCESS", {
+        run_id: runId,
+        event_id: ev.id,
+        source_url: verification.official_event_url ?? undefined,
+        duration_ms: Date.now() - started,
+        confidence: verification.verification_confidence ?? undefined,
+        failure_reason: reason ?? undefined,
+        message: `${ev.event_name}: ${verification.verified_status} — ${recommendedAction(
+          breakdown.total,
+          verification.verified_status,
+        )}`,
+      }),
+    );
+
+    await pushScoringEntry({
+      at: new Date().toISOString(),
+      company: ev.event_name,
+      show: ev.event_name,
+      status: reason ? "skipped" : "scored",
+      score: breakdown.total,
+      reason: reason
+        ? `Excluded — ${reason}`
+        : `${verification.verified_status} · event score ${breakdown.total} · ${recommendedAction(breakdown.total, verification.verified_status)}`,
+    });
+
+    return {
+      ...ev,
+      start_date: verification.start_date ?? ev.start_date,
+      event_year: verification.event_year,
+      verified_status: verification.verified_status as EventVerifiedStatus,
+      event_score: breakdown.total,
+      exclusion_reason: reason,
+      days_until_event: verification.days_until_event,
+      directory_status: verification.exhibitor_directory_status,
+    };
+  });
+
+  await bumpCounters({
+    events_verified: verifiedCount,
+    events_excluded: excludedCount,
+  });
+
+  const eligibleEvents = verified
+    .filter((e) => !e.exclusion_reason)
+    .sort((a, b) => compareForProcessing(a, b));
+
+  if (eligibleEvents.length === 0) {
+    const msg = allowUnverified
+      ? "No show survived verification — every candidate was canceled, already over, or lacked a usable identity."
+      : "No show could be confirmed against its official website. Enable “Allow unverified shows” to process directory-only listings.";
+    limitations.push(msg);
+    await finishSteps();
+    await admin
+      .from("research_runs")
+      .update({ status: "failed", error_message: msg, limitations, step_log: stepLog })
+      .eq("id", runId);
+    return;
+  }
+
   // Scrape top events for exhibitors.
   // maxLeadsPerShow = 0 means "every exhibitor we can find on the show".
   const requestedLeads = input.filters.maxLeadsPerShow ?? 10;
@@ -1380,13 +1596,14 @@ ${sourceLinks.slice(0, 80).join("\n")}`,
   // 0 (or unset via 0) means "deep-dive every show we kept" — no cap.
   const requestedDeepDive = input.filters.maxDeepDiveShows ?? (eventList.is_directory ? 12 : 1);
   const deepDiveCount =
-    requestedDeepDive === 0 ? eventsInDb.length : Math.max(1, Math.min(5000, requestedDeepDive));
-  const topEvents = eventsInDb.slice(0, eventList.is_directory ? deepDiveCount : 1);
-  if (eventsInDb.length > topEvents.length) {
+    requestedDeepDive === 0 ? eligibleEvents.length : Math.max(1, Math.min(5000, requestedDeepDive));
+  const topEvents = eligibleEvents.slice(0, eventList.is_directory ? deepDiveCount : 1);
+  if (eligibleEvents.length > topEvents.length) {
     limitations.push(
-      `Exhibitor deep-dive ran on the top ${topEvents.length} of ${eventsInDb.length} shows; the rest are listed without leads.`,
+      `Exhibitor deep-dive ran on the top ${topEvents.length} of ${eligibleEvents.length} verified shows; the rest are listed without leads.`,
     );
   }
+
 
   await bumpCounters({ kept: eventsInDb.length, deep_dive_total: topEvents.length });
 
@@ -1462,15 +1679,91 @@ ${sourceLinks.slice(0, 80).join("\n")}`,
 
     // Try each candidate source until enough exhibitors are found. Detail pages
     // produce one company each, while listing pages can produce many.
-    let exhibitors: import("zod").infer<typeof ExhibitorListSchema>["exhibitors"] = [];
-    const addCandidateExhibitors = (items: typeof exhibitors) => {
-      const seen = new Set(exhibitors.map((item) => normalizedCompanyKey(item.company_name)));
+    type RawExhibitor = import("zod").infer<typeof ExhibitorListSchema>["exhibitors"][number];
+    type ExtractedExhibitor = RawExhibitor & ExhibitorProvenance;
+    let exhibitors: ExtractedExhibitor[] = [];
+    const metrics = emptyMetrics();
+    const confidences: number[] = [];
+
+    /**
+     * Attach provenance, validate the evidence against the page it came from,
+     * and keep only records that survive. Anything the source cannot back is
+     * rejected rather than downgraded.
+     */
+    const addCandidateExhibitors = (
+      items: RawExhibitor[],
+      src: { url: string; markdown: string },
+      method: ExtractionMethod,
+    ) => {
+      const sourceType = sourceTypeFor(src.url);
+      const seen = new Set(exhibitors.map((item) => item.exhibitor_instance_key));
       let added = 0;
       for (const item of items) {
+        metrics.records_extracted += 1;
+        if (method === "AI") metrics.ai_records += 1;
+        else metrics.deterministic_records += 1;
+
         const key = normalizedCompanyKey(item.company_name);
-        if (!key || seen.has(key)) continue;
-        exhibitors.push(item);
-        seen.add(key);
+        if (!key) {
+          metrics.records_rejected += 1;
+          metrics.rejection_reasons.EMPTY_COMPANY_NAME =
+            (metrics.rejection_reasons.EMPTY_COMPANY_NAME ?? 0) + 1;
+          continue;
+        }
+
+        const line = evidenceLineFor(src.markdown, item.company_name);
+        const evidenceText = item.evidence_text?.trim() || line?.text || null;
+        const check = checkEvidence({
+          companyName: item.company_name,
+          evidenceText,
+          sourceContent: src.markdown,
+          locator: line ? { line: line.line, url: src.url } : { url: src.url },
+        });
+        if (!check.ok) {
+          metrics.records_rejected += 1;
+          metrics.rejection_reasons[check.reason] = (metrics.rejection_reasons[check.reason] ?? 0) + 1;
+          continue;
+        }
+
+        const baseConfidence = method === "AI" ? 0.8 : 0.95;
+        const confidence = capConfidence(baseConfidence, method, sourceType);
+        const status = confidence >= MIN_RECORD_EXTRACTION_CONFIDENCE ? "CONFIRMED" : "UNCERTAIN";
+
+        const record: ExtractedExhibitor = {
+          ...item,
+          source_url: src.url,
+          source_type: sourceType,
+          extraction_method: method,
+          evidence_text: evidenceText,
+          evidence_locator: item.evidence_locator ?? (line ? `line:${line.line}` : null),
+          evidence_hash: evidenceHash(evidenceText),
+          extraction_confidence: confidence,
+          record_status: status,
+          exhibitor_instance_key: exhibitorInstanceKey({
+            eventId: ev.id,
+            companyName: item.company_name,
+            normalizedCompanyName: item.normalized_company_name,
+            profileUrl: item.profile_url,
+            boothNumber: item.booth_number,
+            companyWebsite: item.company_website,
+          }),
+          account_key: accountKey({ companyWebsite: item.company_website, companyName: item.company_name }),
+        };
+
+        if (seen.has(record.exhibitor_instance_key)) {
+          metrics.duplicates_grouped += 1;
+          continue;
+        }
+
+        exhibitors.push(record);
+        seen.add(record.exhibitor_instance_key);
+        confidences.push(confidence);
+        metrics.records_accepted += 1;
+        if (status === "CONFIRMED") metrics.confirmed_records += 1;
+        else metrics.uncertain_records += 1;
+        if (record.booth_number) metrics.records_with_booth_numbers += 1;
+        if (record.profile_url) metrics.records_with_profile_urls += 1;
+        if (record.company_website) metrics.records_with_websites += 1;
         added += 1;
         if (exhibitors.length >= maxLeads) break;
       }
@@ -1485,6 +1778,7 @@ ${sourceLinks.slice(0, 80).join("\n")}`,
       } catch {
         // keep the raw string
       }
+      metrics.pages_processed += 1;
       if (debugEntry.pages.length < 40) debugEntry.pages.push({ url: sourceUrl, added });
       debugEntry.exhibitors += added;
       await bumpCounters({
@@ -1502,7 +1796,7 @@ ${sourceLinks.slice(0, 80).join("\n")}`,
     for (const src of sources) {
       const deterministic = parseExhibitorsFromMarkdown(src.markdown, src.url, extractBatch);
       if (deterministic.length > 0) {
-        const added = addCandidateExhibitors(deterministic);
+        const added = addCandidateExhibitors(deterministic, src, /\.pdf($|\?)/i.test(src.url) ? "PDF" : "HTML");
         await recordPageParsed(src.url, added);
         await pushScoringEntry({
           at: new Date().toISOString(),
@@ -1535,7 +1829,7 @@ ${src.markdown.slice(0, 60000)}`;
         }
         limitations.push(...(exhibitorList.limitations ?? []));
         const added =
-          exhibitorList.exhibitors.length > 0 ? addCandidateExhibitors(exhibitorList.exhibitors) : 0;
+          exhibitorList.exhibitors.length > 0 ? addCandidateExhibitors(exhibitorList.exhibitors, src, "AI") : 0;
         await recordPageParsed(src.url, added);
         if (exhibitors.length >= maxLeads) break;
       } catch (e) {
@@ -1543,6 +1837,29 @@ ${src.markdown.slice(0, 60000)}`;
         await recordPageParsed(src.url, 0);
       }
     }
+
+    {
+      const { kept, duplicatesGrouped } = dedupeExhibitorInstances(exhibitors);
+      metrics.duplicates_grouped += duplicatesGrouped;
+      exhibitors = kept;
+    }
+    metrics.candidate_sources_found = diag.candidates;
+    metrics.sources_verified = sources.length;
+    finalizeMetrics(metrics, confidences);
+    await admin.from("events").update({ extraction_metrics: metrics }).eq("id", ev.id);
+    stepLog.push({
+      key: "extraction_metrics",
+      started_at: new Date().toISOString(),
+      ended_at: new Date().toISOString(),
+      duration_ms: 0,
+      message: `${ev.event_name}: ${metrics.records_accepted} accepted / ${metrics.records_rejected} rejected`,
+    });
+    pipelineLog("EVIDENCE_VALIDATION", metrics.records_rejected > 0 ? "SUCCESS_WITH_WARNINGS" : "SUCCESS", {
+      run_id: runId,
+      event_id: ev.id,
+      accepted: metrics.records_accepted,
+      rejected: metrics.records_rejected,
+    });
 
     if (!unlimitedLeads) exhibitors = exhibitors.slice(0, requestedLeads);
 
@@ -1617,12 +1934,28 @@ TASK:
         const output = await withHeartbeat("enrich_leads", `[${ev.event_name}] Scoring ${ex.company_name}`, () =>
           generateStructured(reasonModel, LeadSchema, leadPrompt),
         );
-        const entry = {
+        const entry: LeadEntry = {
           lead: output,
           eventId: ev.id,
           eventName: ev.event_name,
           eventDate: ev.start_date ?? null,
+          eventYear: ev.event_year ?? null,
           boothNumber: ex.booth_number ?? null,
+          displayedCompanyName: ex.displayed_company_name ?? null,
+          hall: ex.hall ?? null,
+          profileUrl: ex.profile_url ?? null,
+          provenance: {
+            source_url: ex.source_url,
+            source_type: ex.source_type,
+            extraction_method: ex.extraction_method,
+            evidence_text: ex.evidence_text,
+            evidence_locator: ex.evidence_locator,
+            evidence_hash: ex.evidence_hash,
+            extraction_confidence: ex.extraction_confidence,
+            record_status: ex.record_status,
+            exhibitor_instance_key: ex.exhibitor_instance_key,
+            account_key: ex.account_key,
+          },
         };
         allLeads.push(entry);
         const row = buildLeadRow(runId, input.inputUrl, entry, scoring);

@@ -23,6 +23,7 @@ import {
 import { listEmailTemplates } from "@/lib/templates.functions";
 import { renderForLead, type EmailTemplate } from "@/lib/email-template-engine";
 import { toast } from "sonner";
+import { getRunReport, getRunCrmExport } from "@/lib/report.functions";
 
 export const Route = createFileRoute("/_authenticated/runs/$runId")({
   head: () => ({ meta: [{ title: "Run — BoothLens" }, { name: "robots", content: "noindex" }] }),
@@ -288,7 +289,7 @@ function RunDetail() {
       ) : mode === "exhibitors" ? (
         <ExhibitorsTable rows={typedLeads as unknown as ExhibitorRow[]} />
       ) : (
-        <ReportView run={run} events={visibleEvents} leads={typedLeads} es={es} />
+        <ReportView runId={runId} run={run} events={visibleEvents} leads={typedLeads} es={es} />
       )}
 
       {selected && <LeadDrawer lead={selected} onClose={() => setSelected(null)} />}
@@ -666,11 +667,13 @@ function KV({ label, value }: { label: string; value: string | number | null | u
 }
 
 function ReportView({
+  runId,
   run,
   events,
   leads,
   es,
 }: {
+  runId: string;
   run: { input_url: string; created_at: string; target_market: string | null };
   events: Array<{ id: string; event_name: string; event_opportunity_score: number | null; recommended_outreach_phase: string | null; city: string | null; start_date: string | null; industry: string | null }>;
   leads: Lead[];
@@ -693,6 +696,29 @@ function ReportView({
     })),
     leads: leads.map((l) => l.raw),
   }), [run, events, leads, es]);
+
+  const fetchReport = useServerFn(getRunReport);
+  const fetchCrm = useServerFn(getRunCrmExport);
+  const specReport = useQuery({
+    queryKey: ["spec-report", runId],
+    queryFn: () => fetchReport({ data: { runId } }),
+  });
+  const crmExport = useQuery({
+    queryKey: ["crm-export", runId],
+    queryFn: () => fetchCrm({ data: { runId } }),
+  });
+  const spec = (specReport.data ?? null) as null | Record<string, unknown>;
+  const contacts = (spec?.section_5_decision_makers ?? []) as Array<Record<string, unknown>>;
+  const outreach = (spec?.section_6_outreach ?? []) as Array<Record<string, unknown>>;
+
+  const downloadCrmV2 = () => {
+    if (!crmExport.data) return;
+    const blob = new Blob([JSON.stringify(crmExport.data, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `boothlens-crm-v2-${runId}.json`; a.click();
+    URL.revokeObjectURL(url);
+  };
 
   const copyJson = () => { navigator.clipboard.writeText(JSON.stringify(json, null, 2)); toast.success("Copied"); };
   const downloadJson = () => {
@@ -785,6 +811,74 @@ function ReportView({
           </div>
         </div>
         <pre className="mt-3 overflow-x-auto rounded border border-border bg-background p-3 text-[10px] max-h-96">{JSON.stringify(json, null, 2)}</pre>
+      </section>
+
+      <section className="mt-8">
+        <h2 className="text-xl font-semibold">Section 5 — Decision makers</h2>
+        {contacts.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No verified decision makers recorded.</p>
+        ) : (
+          <table className="mt-3 w-full text-xs">
+            <thead className="border-b border-border text-left uppercase text-muted-foreground">
+              <tr><th className="py-2">Company</th><th>Name</th><th>Title</th><th>Classification</th><th>Confidence</th><th>Email</th></tr>
+            </thead>
+            <tbody>
+              {contacts.map((c, i) => (
+                <tr key={i} className="border-b border-border">
+                  <td className="py-2">{String(c.company_name ?? "—")}</td>
+                  <td>{String(c.name ?? "[target title]")}</td>
+                  <td className="text-muted-foreground">{String(c.title ?? "—")}</td>
+                  <td className="font-mono text-[10px]">{String(c.classification ?? "—")}</td>
+                  <td className="font-mono">{String(c.contact_confidence ?? "—")}</td>
+                  <td className="text-muted-foreground">{String(c.business_email ?? "—")}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </section>
+
+      <section className="mt-8">
+        <div className="flex items-center justify-between">
+          <h2 className="text-xl font-semibold">Section 6 — Outreach drafts</h2>
+          <button
+            onClick={downloadCrmV2}
+            disabled={!crmExport.data}
+            className="rounded bg-primary px-3 py-1 text-xs text-primary-foreground disabled:opacity-50"
+          >
+            Download CRM JSON v2.0
+          </button>
+        </div>
+        {outreach.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            No drafts yet — drafts are created once a lead clears the six-condition email gate.
+          </p>
+        ) : (
+          <div className="mt-4 space-y-4">
+            {outreach.map((o, i) => (
+              <div key={i} className="rounded-lg border border-border bg-card p-4">
+                <div className="flex items-center justify-between">
+                  <div className="text-sm font-medium">{String(o.company_name ?? "")}</div>
+                  <span className="rounded border border-border px-2 py-0.5 font-mono text-[10px]">
+                    {String(o.status ?? "")}
+                  </span>
+                </div>
+                <div className="mt-1 text-xs text-muted-foreground">
+                  {String((o.recipient as Record<string, unknown> | undefined)?.name ?? "[target]")} ·{" "}
+                  {String((o.recipient as Record<string, unknown> | undefined)?.title ?? "—")} ·{" "}
+                  {String(o.outreach_phase ?? "—")} · send {String(o.recommended_send_date ?? "—")}
+                </div>
+                <div className="mt-2 text-sm font-medium">{String(o.subject ?? "")}</div>
+                <pre className="mt-1 whitespace-pre-wrap rounded border border-border bg-background p-3 text-xs font-sans">{String(o.body ?? "")}</pre>
+                {Array.isArray(o.blocked_reasons) && o.blocked_reasons.length > 0 && (
+                  <p className="mt-1 text-xs text-warning">
+                    Needs review: {(o.blocked_reasons as string[]).join(", ")}
+                  </p>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
       </section>
     </article>
   );

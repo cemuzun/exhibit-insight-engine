@@ -1,83 +1,79 @@
+# Align BoothLens with the Trade Show Exhibitor Lead Generation spec
 
-## What we're building
+## 1. Current architecture map
 
-A B2B sales intelligence web app that takes a trade show directory or event URL, scrapes exhibitors with Firecrawl, runs the multi-stage analysis workflow through Lovable AI, and returns ranked leads with decision-maker targets, budget estimates, personalized outreach, and CRM-ready JSON. Users sign in, save every research run, and can revisit past runs.
+- `src/lib/pipeline.server.ts` (~1750 lines) — the whole run: directory scrape → event extraction (`scoreDirectoryEvent`, AI event ranking) → `findExhibitorSources` → page scraping → exhibitor extraction (deterministic + AI) → lead scoring (`explainLeadScore`) → decision-maker suggestion → email drafting. Emits live counters/`show_debug`/scoring-feed entries.
+- `src/lib/pipeline-schemas.ts` — Zod schemas for event list, exhibitor batches, lead enrichment.
+- `src/lib/exhibitor-parser.ts` — deterministic parsers (MapYourShow/a2z markdown, plain PDF-style lists).
+- `src/lib/firecrawl.server.ts`, `firecrawl-cache.server.ts`, `rate-limit.server.ts` — scraping, cache reuse window, rate limiting + circuit breaker.
+- `src/lib/scoring.ts` / `scoring.functions.ts` + `scoring_settings` table — user-configurable lead weights/tiers.
+- `src/lib/outreach.functions.ts`, `email-template-engine.ts`, `outreach-send.server.ts`, `templates.functions.ts` — drafts, templates, sending.
+- `src/lib/crm.functions.ts`, `hubspot.server.ts` — HubSpot sync (company/contact ids on `leads`).
+- DB: `research_runs`, `events`, `leads` (exhibitor + lead + contacts in `decision_makers` jsonb), `outreach_emails`, `email_templates`, `digest_schedules`, `notifications`, `scoring_settings`, `firecrawl_cache`.
+- UI: `runs.$runId.tsx` (tabs incl. Exhibitors + Debug), `ExhibitorsTable.tsx`, `RunProgress.tsx`, `ScoringFeed.tsx`, `DebugPanel.tsx`, `outreach.$runId.tsx`.
 
-## Stack
+## 2. Gap analysis
 
-- TanStack Start + Tailwind (existing).
-- **Lovable Cloud** for auth (email/password + Google) and to store users, research runs, events, and leads.
-- **Lovable AI Gateway** (`google/gemini-3.1-pro-preview` for heavy reasoning, `google/gemini-3.6-flash` for extraction/normalization).
-- **Firecrawl connector** for scraping trade show directories, event sites, and exhibitor lists (`scrape`, `map`, `crawl`).
-- All AI + Firecrawl calls in `createServerFn` handlers; nothing runs in the browser except UI.
+| Spec area | Today | Gap |
+|---|---|---|
+| Event verification | events stored straight from directory/AI, no official-site check | whole verification pass, statuses, year matching, exclusion reasons |
+| Event scoring | ad-hoc `scoreDirectoryEvent` + AI 0-100 | 8 fixed components, stored breakdown, SPEC_DEFAULT/CUSTOM modes |
+| Processing order | score-sorted only | verification-tier ordering |
+| Exhibitor evidence | company/booth/website/confidence text only | evidence_text/locator/hash, source_type, extraction_method, hall, profile_url, country, sponsor level, record_status |
+| Evidence validation | none — AI rows trusted | normalized snippet matching + rejection, confidence caps |
+| Dedup | normalized name + event | instance key incl. profile_url/booth/brand |
+| Extraction metrics | partial counters | full per-event metric set |
+| Enrichment gate | none | block scoring/contacts on failed gates |
+| Contacts | free-form `decision_makers` jsonb with `role_classification`/`evidence_status` | 4-value classification, title priority list, verification_status, evidence fields |
+| Email gate/validator | template-driven, always drafts | 6-condition gate, personalization facts, banned-phrase + word-count validator, outreach phase |
+| Reports/exports | tabs + CSV | 6 sections, per-lead/run JSON v2.0, extended CSV |
+| HubSpot | name/domain search sync | stable keys, stored ids, gated stage advancement |
+| Logs | scoring feed + debug counters | structured stage logs with statuses |
 
-## Data model (Lovable Cloud)
+## 3. Database design (3 migrations, all nullable/defaulted, RLS + grants unchanged)
 
-- `profiles` — id → auth.users, display_name.
-- `research_runs` — id, user_id, input_url, input_source_type, target_market, filters (jsonb), status (`queued|scraping|analyzing|complete|failed`), executive_summary (jsonb), limitations (text[]), created_at.
-- `events` — id, run_id, event_name, official_url, industry, dates, venue, city, state, event_opportunity_score, recommended_outreach_phase, source_urls (text[]).
-- `leads` — id, run_id, event_id, full lead record per Section 4 JSON schema (company info, booth analysis, score_breakdown jsonb, decision_makers jsonb, estimated_project_value low/high, priority_tier, personalized_email, linkedin_message, unknown_fields, source_urls).
+1. **Events**: `event_year`, `verified_status` (default `'UNVERIFIED'`), `exhibitor_directory_status` default `'UNKNOWN'`, `days_until_event`, `verification_source_urls text[]`, `verification_checked_at`, `verification_confidence`, `verification_notes`, `event_score`, `event_score_breakdown jsonb`, `scoring_mode`, `excluded`, `exclusion_reason`, `extraction_metrics jsonb`. Indexes on `verified_status`, `event_year`, `event_score`.
+2. **Leads (exhibitor instance)**: `displayed_company_name`, `profile_url`, `hall`, `product_category`, `company_description`, `country`, `sponsor_level`, `event_year`, `source_type`, `extraction_method`, `evidence_text`, `evidence_locator jsonb`, `evidence_hash`, `extraction_confidence`, `found_at`, `last_confirmed_at`, `record_status` default `'UNCERTAIN'`, `represented_brand`, `exhibitor_instance_key`, `account_key`, `blocked_reasons text[]`, `conflicts jsonb`. Unique index on `(run_id, exhibitor_instance_key)`; indexes on `event_id`, `normalized_company_name`, `booth_number`, `record_status`.
+3. **Outreach**: `draft_status` default `'LEGACY_UNVALIDATED'`, `blocked_reasons text[]`, `personalization_fact jsonb`, `service_offered`, `validation jsonb`, `outreach_phase`, `recommended_send_date`, `follow_up_date`, plus `crm_*` id columns for deal/contact keys on `leads`.
 
-Full RLS: every table scoped to `auth.uid()`. GRANTs to `authenticated` + `service_role`.
+Contacts stay inside `leads.decision_makers` jsonb (schema-validated) rather than a new table, to avoid duplicating an existing abstraction; classification/verification indexes are handled in app-side filters. If querying contacts standalone becomes necessary, a `lead_contacts` table can follow later.
 
-## Pages / routes
+## 4. New/changed TypeScript modules
 
-- `/` — public landing: what the tool does, sample output screenshot, "Sign in to start".
-- `/auth` — email/password + Google sign-in (public).
-- `/_authenticated/dashboard` — list of past research runs with status, input, tier-1 count, created date. "New research run" button.
-- `/_authenticated/runs/new` — form: source URL, source type (directory / event / exhibitor list), target market, priority industries (multi-select), min project value, max leads per show, target services. Submits → creates run → redirects to run detail.
-- `/_authenticated/runs/$runId` — the results view. Two modes toggled at the top:
-  - **Dashboard mode** (default): executive summary cards, ranked opportunity table (sortable by score/tier/date), click a row → side panel with the full detailed lead record + outreach drafts.
-  - **Report mode**: long-form scrollable rendering of all 4 sections (executive summary → ranked table → detailed lead records → CRM JSON with copy/download button).
-  - Live status while processing (polls run status; shows stage-by-stage progress: validating source → researching events → extracting exhibitors → enriching → discovering decision makers → scoring → complete).
+- `src/lib/verification.ts` + `verification.server.ts` — `EventVerifiedStatus`, `ExhibitorDirectoryStatus`, official-site verify pass, year/date/venue matching, exclusion rules.
+- `src/lib/event-scoring.ts` — 8 components, SPEC_DEFAULT/CUSTOM modes, weight normalization, breakdown type.
+- `src/lib/evidence.ts` — normalization (entities, Unicode, whitespace, invisibles), snippet matching, hashing, confidence caps (configurable constants).
+- `src/lib/exhibitor-parser.ts` — parsers return `{ record, evidence_text, evidence_locator, extraction_method, source_type, confidence }`.
+- `src/lib/exhibitor-dedupe.ts` — instance key + account grouping.
+- `src/lib/contacts.ts` — title→classification priority tables, `ContactVerificationStatus`, inferred-target-title builder.
+- `src/lib/email-gate.ts` + `email-validator.ts` — 6-condition gate, personalization facts, banned-phrase/word-count/unsupported-claim checks, outreach-phase calculation.
+- `src/lib/report.ts` + `crm-json.ts` — six report sections and schema-version 2.0 JSON with runtime Zod validation.
+- `src/lib/pipeline-log.ts` — structured stage logging (stage enum + status enum) written into the existing run step log.
+- `src/lib/backfill.functions.ts` — resumable, idempotent re-verify/re-check command exposed from a settings screen.
+- `pipeline.server.ts` refactor: keep `runPipeline` orchestration but move verification, scoring, evidence, dedupe, gating into the modules above.
 
-## Backend workflow (server functions)
+## 5. Backfill
 
-One orchestrating server fn `runResearch({ runId })` runs the stages in order and updates run status/rows as each stage completes so the UI can stream progress:
+Legacy rows keep working: events `UNVERIFIED`, exhibitors `UNCERTAIN` with null evidence, contacts `INFERRED`, drafts `LEGACY_UNVALIDATED`. A backfill server function processes a run in batches keyed by last-processed id, re-verifying events, re-checking sources for evidence, revalidating contacts, and revalidating or blocking legacy emails; safe to re-run.
 
-1. **Validate source** — classify URL, record access date.
-2. **Scrape events** (Firecrawl `scrape` for directory pages; `map` when the directory has many linked events). Extract event metadata, dedupe.
-3. **AI rank events** (Gemini Pro) → write to `events` table with opportunity score + outreach phase.
-4. **Scrape exhibitors** per top-ranked event (Firecrawl `scrape` on exhibitor list; `crawl` when list is paginated). Normalize names, drop non-companies (associations, media partners).
-5. **Enrich companies** — Firecrawl `search`/`scrape` corporate sites; AI extracts industry, size, growth signals; each field tagged CONFIRMED / INFERRED / ESTIMATED / UNKNOWN with sources.
-6. **Booth + service-need analysis** — AI over enriched context and any booth photos found; outputs are labeled observational.
-7. **Decision-maker discovery** — AI proposes titles + candidate names using company-size logic from the spec. When a person cannot be verified, returns a Recommended Target Title with confidence < 70 and no fabricated email/LinkedIn.
-8. **Score leads** (deterministic code applying the 9-component weighted model; AI supplies component justifications). Assigns tier.
-9. **Generate outreach** — per-lead subject+email+LinkedIn message using only verified personalization points.
-10. **QA pass** — final AI check against Section 20 checklist; flags any lead that fails and lowers confidence.
+## 6. Testing
 
-All AI calls use structured output (`Output.object` + Zod schema) matching the Section 4 JSON so results insert directly into `leads`.
+Unit (vitest): 8 score components + total, SPEC vs CUSTOM modes, wrong-year/stale/canceled handling, evidence normalization + rejection, AI confidence caps, multi-booth and subsidiary preservation, title classification, email gate conditions, word count, banned phrases, unsupported booth claim, CRM JSON schema, HubSpot key stability.
+Integration with saved fixtures under `tests/fixtures/`: static HTML directory, paginated, MapYourShow/a2z, embedded JSON, directory API, floor plan, PDF, sitemap profiles, AI fallback, wrong-year directory, blocked site, partial extraction, duplicates, multi-booth, legacy records, HubSpot retry.
 
-## Anti-hallucination enforcement
+## 7. Compatibility risks
 
-- Every `decision_maker` row stores `evidence_status`, `contact_confidence`, and `source_urls`; the UI hides email/LinkedIn fields entirely when confidence < 70 and shows "Recommended target title" instead.
-- Every estimate field renders with an "Estimate — assumptions" tooltip; confirmed fields render with a source link.
-- Leads with missing verification cannot be marked Tier 1 by the scoring code regardless of AI suggestion.
-- Human-review banner on run detail: "Review before sending" with checklist from Section 18.
+- Gates will visibly reduce lead counts on sources that previously produced unverified rows; mitigated by surfacing blocked reasons rather than hiding them, plus an explicit "allow unverified events" run option.
+- Extra verification scrape per event increases Firecrawl usage; verification results are cached and reuse the existing cache window and circuit breaker.
+- `decision_makers` jsonb shape changes; a mapping layer reads old `role_classification`/`evidence_status` values.
+- Existing CSV consumers get extra columns appended (existing headers keep their meaning).
 
-## UI details
+## 8. Implementation sequence
 
-- Design direction: professional B2B intelligence tool — dark navy + electric-blue accent, dense data-first layout, mono for scores/IDs, sans for content. Similar in feel to Attio / Clay. Not generic SaaS purple.
-- Ranked opportunity table with tier badges (T1 red, T2 orange, T3 yellow, T4 gray), score bar, action column.
-- Lead detail panel: tabs for Overview / Booth & Services / Decision Makers / Outreach / Sources / Raw JSON.
-- Report mode uses print-friendly typography; "Download JSON" and "Copy JSON" buttons.
+1. Migration 1 + `verification`, `event-scoring`, exclusion + ordering, Trade Shows tab.
+2. Migration 2 + `evidence`, parser evidence outputs, AI rejection, dedupe, metrics, enrichment gate, Exhibitors table columns.
+3. Migration 3 + contacts classification/verification, personalization facts, email gate/validator/phase, outreach queue states.
+4. Report sections, JSON/CSV exports, HubSpot stable keys + gated stage advancement, structured logs, backfill command.
+5. Full unit + integration suite, then typecheck and production build.
 
-## Out of scope for v1
-
-- Sending emails directly (human-review requirement — we draft only).
-- CRM push integrations (Salesforce/HubSpot). We generate the CRM JSON; user copies/downloads.
-- PDF/spreadsheet upload as input (URL-based only in v1, per your answer). Easy to add later.
-- Live web browser control / image analysis of booth photos (we'll extract linked image URLs and let AI reason from context; actual vision analysis can be added later).
-
-## Setup steps at build time
-
-1. Enable Lovable Cloud + configure email/password + Google auth.
-2. Connect Firecrawl connector (user runs the connect flow).
-3. Run migration for the 4 tables + RLS + GRANTs.
-4. Build server functions, then routes, then UI.
-
-## Open questions I'll assume unless you say otherwise
-
-- Google sign-in **on** in addition to email/password.
-- Runs are private to the user who created them (no team sharing in v1).
-- Firecrawl is the only scraper; if it fails on a source, the run surfaces the limitation rather than falling back to another provider.
+Each phase is independently deployable; after implementation I'll report changed files, migrations, config options, test results, and sample verification/evidence/blocked-email/CRM JSON outputs.

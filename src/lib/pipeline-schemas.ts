@@ -29,10 +29,16 @@ export const EventListSchema = z.object({
 
 export const ExhibitorSchema = z.object({
   company_name: z.string(),
+  displayed_company_name: z.string().nullable().optional(),
   normalized_company_name: z.string().nullable().optional(),
   company_website: z.string().nullable().optional(),
   booth_number: z.string().nullable().optional(),
+  hall: z.string().nullable().optional(),
+  profile_url: z.string().nullable().optional(),
   category: z.string().nullable().optional(),
+  /** Verbatim text from the source that proves this company exhibits. */
+  evidence_text: z.string().nullable().optional(),
+  evidence_locator: z.string().nullable().optional(),
 });
 
 export const ExhibitorListSchema = z.object({
@@ -45,13 +51,19 @@ export const ExhibitorListSchema = z.object({
 export const DecisionMakerSchema = z.object({
   name: z.string().nullable().optional(),
   title: z.string().catch("Unknown").default("Unknown"),
+  department: z.string().nullable().optional(),
   role_classification: z.string().nullable().optional(),
+  /** PRIMARY | SECONDARY | INFLUENCER | INFERRED_TITLE_ONLY */
+  contact_classification: z.string().nullable().optional(),
   professional_profile_url: z.string().nullable().optional(),
   public_business_email: z.string().nullable().optional(),
   contact_confidence: z.coerce.number().nullable().optional(),
   evidence_status: z.string().nullable().optional(),
+  evidence_text: z.string().nullable().optional(),
+  source_urls: z.array(z.string()).nullable().optional(),
   relevance_explanation: z.string().nullable().optional(),
 });
+
 
 export const ScoreBreakdownSchema = z.object({
   trade_show_activity: z.coerce.number().catch(0).default(0),
@@ -90,8 +102,22 @@ export const LeadSchema = z.object({
   unknown_fields: z.array(z.string()).nullable().optional(),
   buying_triggers: z.array(z.string()).nullable().optional(),
   risks_and_uncertainties: z.array(z.string()).nullable().optional(),
+  qualification_reasons: z.array(z.string()).nullable().optional(),
+  /** Verified facts usable for personalization; each must carry a source URL. */
+  personalization_facts: z
+    .array(
+      z.object({
+        type: z.string().catch("CONFIRMED_EXHIBITOR").default("CONFIRMED_EXHIBITOR"),
+        value: z.string(),
+        source_url: z.string().nullable().optional(),
+        confidence: z.coerce.number().nullable().optional(),
+      }),
+    )
+    .nullable()
+    .optional(),
   rationale: z.string().nullable().optional(),
 });
+
 
 export const ExecSummarySchema = z.object({
   shows_reviewed: z.coerce.number().catch(0).default(0),
