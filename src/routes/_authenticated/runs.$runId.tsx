@@ -146,6 +146,36 @@ function RunDetail() {
   );
 }
 
+function CrmSyncButton({ runId, disabled }: { runId: string; disabled?: boolean }) {
+  const sync = useServerFn(syncRunToCrm);
+  const [busy, setBusy] = useState(false);
+
+  async function run() {
+    setBusy(true);
+    try {
+      const r = await sync({ data: { runId, minScore: 50 } });
+      toast.success(
+        `CRM sync complete — ${r.companiesCreated} companies, ${r.contactsCreated} contacts created; ${r.skipped} skipped${r.failed ? `, ${r.failed} failed` : ""}.`,
+      );
+    } catch (e) {
+      toast.error((e as Error).message || "CRM sync failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <button
+      onClick={run}
+      disabled={busy || disabled}
+      className="rounded-md border border-border bg-card px-3 py-2 text-xs font-medium hover:bg-muted disabled:opacity-50"
+      title="Push qualified leads (score ≥ 50) and evidence-verified decision-maker contacts to HubSpot"
+    >
+      {busy ? "Syncing to CRM…" : "Sync to CRM"}
+    </button>
+  );
+}
+
 function DashboardView({
   events,
   leads,
