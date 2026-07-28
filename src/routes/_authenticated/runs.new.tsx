@@ -29,7 +29,7 @@ function NewRun() {
     maxEvents: 500,
     maxDirectoryPages: 25,
     pageReuseHours: 24,
-    maxDeepDiveShows: 4,
+    maxDeepDiveShows: 12,
     priorityIndustries: "technology, manufacturing, medical, automotive",
     targetServices: DEFAULT_SERVICES.join(", "),
   });
@@ -199,7 +199,7 @@ function NewRun() {
               min={1}
               max={25}
               value={form.maxDeepDiveShows}
-              onChange={(e) => setForm({ ...form, maxDeepDiveShows: parseInt(e.target.value || "4") })}
+              onChange={(e) => setForm({ ...form, maxDeepDiveShows: parseInt(e.target.value || "12") })}
               className="w-full rounded-md border border-border bg-input px-3 py-2 text-sm font-mono"
             />
           </Field>

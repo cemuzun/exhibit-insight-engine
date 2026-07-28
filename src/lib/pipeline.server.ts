@@ -1116,7 +1116,7 @@ ${sourceLinks.slice(0, 80).join("\n")}`,
   const maxLeads = input.filters.maxLeadsPerShow ?? 10;
   const deepDiveCount = Math.max(
     1,
-    Math.min(25, input.filters.maxDeepDiveShows ?? (eventList.is_directory ? 4 : 1)),
+    Math.min(25, input.filters.maxDeepDiveShows ?? (eventList.is_directory ? 12 : 1)),
   );
   const topEvents = eventsInDb.slice(0, eventList.is_directory ? deepDiveCount : 1);
   if (eventsInDb.length > topEvents.length) {

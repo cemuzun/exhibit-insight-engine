@@ -14,7 +14,7 @@ const CreateInput = z.object({
   maxDirectoryPages: z.number().int().min(1).max(50).default(25),
   /** Reuse directory pages fetched within this many hours (0 = always refetch). */
   pageReuseHours: z.number().int().min(0).max(720).default(24),
-  maxDeepDiveShows: z.number().int().min(1).max(25).default(4),
+  maxDeepDiveShows: z.number().int().min(1).max(25).default(12),
   minLeadTimeDays: z.number().int().min(0).max(365).default(45),
   priorityIndustries: z.array(z.string().max(100)).max(20).default([]),
   targetServices: z.array(z.string().max(100)).max(20).default([]),
