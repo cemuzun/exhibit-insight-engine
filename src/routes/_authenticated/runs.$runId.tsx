@@ -73,6 +73,7 @@ function RunDetail() {
   const [mode, setMode] = useState<"dashboard" | "report">("dashboard");
   const [selected, setSelected] = useState<Lead | null>(null);
 
+  const queryClient = useQueryClient();
   const { data, isLoading } = useQuery({
     queryKey: ["run", runId],
     queryFn: () => get({ data: { runId } }),
@@ -81,6 +82,24 @@ function RunDetail() {
       return s === "complete" || s === "failed" ? false : 3000;
     },
   });
+
+  // Live push updates for step-by-step progress.
+  useEffect(() => {
+    const channel = supabase
+      .channel(`run-${runId}`)
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "research_runs", filter: `id=eq.${runId}` },
+        () => {
+          queryClient.invalidateQueries({ queryKey: ["run", runId] });
+        },
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [runId, queryClient]);
+
 
   if (isLoading || !data) return <main className="mx-auto max-w-7xl px-6 py-8"><p className="text-sm text-muted-foreground">Loading…</p></main>;
 
