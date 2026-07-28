@@ -164,6 +164,46 @@ function dedupeEvents(events: EventRecord[]): EventRecord[] {
   return Array.from(seen.values());
 }
 
+const MONTHS: Record<string, number> = {
+  jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
+  jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11,
+};
+
+/**
+ * Best-effort parse of directory date strings such as
+ * "Nov 4 - Nov 6, 2026", "4-6 November 2026", "2026-03-10".
+ * Returns null when no date can be read (never guesses).
+ */
+export function parseEventStartDate(raw: string | null | undefined): Date | null {
+  if (!raw) return null;
+  const text = String(raw).replace(/\s+/g, " ").trim();
+  if (!text) return null;
+
+  const iso = text.match(/(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return new Date(Date.UTC(+iso[1], +iso[2] - 1, +iso[3]));
+
+  const year = text.match(/\b(20\d{2})\b/);
+  if (!year) return null;
+
+  const monthMatch = text.toLowerCase().match(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/);
+  if (!monthMatch) return null;
+  const month = MONTHS[monthMatch[1]];
+
+  // First standalone 1-2 digit number that isn't part of the year.
+  const dayMatch = text.match(/\b(\d{1,2})\b/);
+  const day = dayMatch ? Math.min(28, Math.max(1, +dayMatch[1])) : 1;
+
+  const d = new Date(Date.UTC(+year[1], month, day));
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+/** Days from today until the show starts; negative when already past. */
+export function eventLeadTimeDays(raw: string | null | undefined, now = new Date()): number | null {
+  const start = parseEventStartDate(raw);
+  if (!start) return null;
+  return Math.round((start.getTime() - now.getTime()) / 86_400_000);
+}
+
 function compactSourceMarkdown(markdown: string): string {
   return markdown
     .split("\n")
@@ -378,6 +418,8 @@ export async function runPipeline(
       maxDirectoryPages?: number;
       /** Max shows to deep-dive for exhibitors/leads (default 4). */
       maxDeepDiveShows?: number;
+      /** Skip shows starting sooner than this many days from now (default 45). */
+      minLeadTimeDays?: number;
       priorityIndustries?: string[];
       targetServices?: string[];
       /** Optional per-run tuning of parallelism / request rates. */
@@ -608,15 +650,32 @@ ${sourceLinks.slice(0, 80).join("\n")}`,
     }
   }
 
-  // Persist events
-  const eventRows = eventList.events
-    .sort((a, b) => b.event_opportunity_score - a.event_opportunity_score)
-    .slice(0, maxEvents);
-  if (eventList.events.length > eventRows.length) {
+  // Drop shows that are already over or too close to sell into (booth design,
+  // fabrication and shipping need lead time).
+  const minLeadDays = Math.max(0, Math.min(365, input.filters.minLeadTimeDays ?? 45));
+  const dated = eventList.events.map((e) => ({ event: e, leadDays: eventLeadTimeDays(e.start_date) }));
+  const tooSoon = dated.filter((d) => d.leadDays !== null && d.leadDays < minLeadDays);
+  const eligible = dated.filter((d) => d.leadDays === null || d.leadDays >= minLeadDays).map((d) => d.event);
+
+  if (tooSoon.length > 0) {
     limitations.push(
-      `Source listed ${eventList.events.length} shows; kept the top ${eventRows.length} by opportunity score.`,
+      `Skipped ${tooSoon.length} show(s) starting in under ${minLeadDays} days (or already past): ${tooSoon
+        .slice(0, 5)
+        .map((d) => d.event.event_name)
+        .join(", ")}${tooSoon.length > 5 ? "…" : ""}`,
     );
   }
+
+  // Persist events
+  const eventRows = eligible
+    .sort((a, b) => b.event_opportunity_score - a.event_opportunity_score)
+    .slice(0, maxEvents);
+  if (eligible.length > eventRows.length) {
+    limitations.push(
+      `Source listed ${eligible.length} eligible shows; kept the top ${eventRows.length} by opportunity score.`,
+    );
+  }
+
   const insertedEvents = await admin
     .from("events")
     .insert(
