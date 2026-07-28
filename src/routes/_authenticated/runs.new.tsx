@@ -160,11 +160,12 @@ function NewRun() {
               className="w-full rounded-md border border-border bg-input px-3 py-2 text-sm font-mono"
             />
           </Field>
-          <Field label="Max shows reviewed" hint="Cap on shows kept from a directory (up to 2000).">
+          <Field label="Max shows reviewed" hint="Cap on shows kept from a directory (up to 5000).">
             <input
               type="number"
               min={1}
-              max={2000}
+              max={5000}
+
               value={form.maxEvents}
               onChange={(e) => setForm({ ...form, maxEvents: parseInt(e.target.value || "2000") })}
               className="w-full rounded-md border border-border bg-input px-3 py-2 text-sm font-mono"
