@@ -13,7 +13,7 @@ function envInt(name: string, fallback: number): number {
   return Number.isFinite(n) && n > 0 ? n : fallback;
 }
 
-export function cacheTtlMs(kind: "scrape" | "search"): number {
+export function cacheTtlMs(kind: "scrape" | "search" | "map"): number {
   const hours =
     kind === "scrape"
       ? envInt("FIRECRAWL_SCRAPE_CACHE_HOURS", 24)
@@ -143,7 +143,7 @@ export type CacheOptions = {
 
 /** Wrap a Firecrawl call with read-through caching. */
 export async function withCache<T>(
-  kind: "scrape" | "search",
+  kind: "scrape" | "search" | "map",
   request: unknown,
   fn: () => Promise<T>,
   opts: CacheOptions = {},
