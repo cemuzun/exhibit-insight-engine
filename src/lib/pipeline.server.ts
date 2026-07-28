@@ -3,7 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { createLovableAiGatewayProvider, requireLovableKey } from "./ai-gateway.server";
 import { firecrawlMap, firecrawlScrape, firecrawlSearch } from "./firecrawl.server";
 import { recentCachedScrapesForHost } from "./firecrawl-cache.server";
-import { normalizedCompanyKey, parseExhibitorsFromMarkdown } from "./exhibitor-parser";
+import { isLikelyCompanyName, normalizedCompanyKey, parseExhibitorsFromMarkdown } from "./exhibitor-parser";
 import {
   guarded,
   llmLimiter,
