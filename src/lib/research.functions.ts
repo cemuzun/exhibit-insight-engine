@@ -219,6 +219,10 @@ export const resumeStalledRun = createServerFn({ method: "POST" })
       })
       .eq("id", data.runId);
 
+    // The pipeline replays from the start, so drop partial results first.
+    await supabaseAdmin.from("leads").delete().eq("run_id", data.runId);
+    await supabaseAdmin.from("events").delete().eq("run_id", data.runId);
+
     const { runPipeline } = await import("./pipeline.server");
     try {
       await runPipeline(
@@ -226,7 +230,16 @@ export const resumeStalledRun = createServerFn({ method: "POST" })
         {
           inputUrl: run.input_url,
           targetMarket: run.target_market,
-          filters: (run.filters ?? {}) as Record<string, unknown>,
+          filters: (run.filters ?? {}) as {
+            minProjectValue?: number;
+            maxLeadsPerShow?: number;
+            maxEvents?: number;
+            maxDirectoryPages?: number;
+            maxDeepDiveShows?: number;
+            minLeadTimeDays?: number;
+            priorityIndustries?: string[];
+            targetServices?: string[];
+          },
         },
         supabaseAdmin,
       );
