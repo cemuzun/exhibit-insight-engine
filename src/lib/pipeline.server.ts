@@ -1694,7 +1694,19 @@ ${sourceLinks.slice(0, 80).join("\n")}`,
       { url: input.inputUrl, markdown: sourceMarkdown },
     ];
 
-    if (eventList.is_directory && ev.official_url) {
+    // Cheap probe first: if the show runs a MapYourShow directory we can read
+    // its complete exhibitor index directly and skip the slow source hunt.
+    let mysBase: string | null = null;
+    if (ev.official_url) {
+      mysBase = await withHeartbeat(
+        "extract_exhibitors",
+        `Checking for an exhibitor directory index for ${ev.event_name}`,
+        () => discoverMapYourShowBase(ev.official_url as string).catch(() => null),
+      );
+    }
+
+    if (!mysBase && eventList.is_directory && ev.official_url) {
+
       try {
         sources = await withHeartbeat(
           "extract_exhibitors",
