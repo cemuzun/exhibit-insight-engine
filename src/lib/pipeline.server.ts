@@ -50,14 +50,18 @@ function extractJson(text: string): unknown {
 }
 
 /**
- * Structured generation that degrades instead of crashing: if the model output
- * fails schema validation, retry parsing the raw text before giving up.
+ * Structured generation that degrades instead of crashing:
+ * 1. provider structured output
+ * 2. plain-text JSON-only generation, parsed locally
+ * 3. one repair pass that re-asks the model to fix its own JSON
  */
 async function generateStructured<T>(
   model: Parameters<typeof generateText>[0]["model"],
   schema: ZodLike<T>,
   prompt: string,
 ): Promise<T> {
+  let lastText = "";
+
   try {
     const { output } = await generateText({
       model,
@@ -67,12 +71,39 @@ async function generateStructured<T>(
     return output as T;
   } catch (e) {
     if (NoObjectGeneratedError.isInstance(e) && e.text) {
+      lastText = e.text;
       const parsed = schema.safeParse(extractJson(e.text));
       if (parsed.success && parsed.data !== undefined) return parsed.data;
     }
-    throw e;
   }
+
+  const jsonOnly = `${prompt}
+
+OUTPUT FORMAT: Reply with a single valid JSON object only. No markdown fences, no commentary, no trailing text. Use null for unknown values and never omit required keys.`;
+
+  try {
+    const { text } = await generateText({ model, prompt: jsonOnly });
+    lastText = text || lastText;
+    const parsed = schema.safeParse(extractJson(text));
+    if (parsed.success && parsed.data !== undefined) return parsed.data;
+  } catch {
+    // fall through to repair
+  }
+
+  const { text: repaired } = await generateText({
+    model,
+    prompt: `The following text was supposed to be a single valid JSON object but could not be parsed or validated. Return ONLY the corrected JSON object, preserving all usable data and using null for unknown values.
+
+${lastText.slice(0, 20000)}`,
+  });
+  const parsed = schema.safeParse(extractJson(repaired));
+  if (parsed.success && parsed.data !== undefined) return parsed.data;
+
+  throw new Error(
+    "Could not extract structured data from the source page after 3 attempts. The page may be blocked, empty, or not a trade show listing.",
+  );
 }
+
 
 type ProgressFn = (stage: string, message: string) => Promise<void>;
 
