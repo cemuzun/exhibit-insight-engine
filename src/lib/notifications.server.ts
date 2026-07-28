@@ -89,29 +89,9 @@ async function sendFailureEmail(
     errorMessage: string;
   },
 ): Promise<"sent" | "skipped" | "failed"> {
-  try {
-    // App emails require a verified sender domain + scaffolded templates.
-    // Until those exist this resolves to "skipped" and only the in-app alert fires.
-    const mod = await import("@/lib/email-templates/send-email").catch(() => null);
-    const send = (mod as { sendTemplateEmail?: Function } | null)?.sendTemplateEmail;
-    if (typeof send !== "function") return "skipped";
-
-    const { data: user } = await admin.auth.admin.getUserById(info.userId);
-    const email = user?.user?.email;
-    if (!email) return "skipped";
-
-    const res = await send("run-failed", email, {
-      templateData: {
-        inputUrl: info.inputUrl,
-        lastStep: info.stepLabel,
-        lastStepMessage: info.stepMessage,
-        errorMessage: info.errorMessage,
-        runId: info.runId,
-      },
-      idempotencyKey: `run-failed-${info.runId}-${Date.now()}`,
-    });
-    return res?.sent ? "sent" : "skipped";
-  } catch {
-    return "failed";
-  }
+  // Email alerts require a verified sender domain + scaffolded app-email
+  // templates. Until those exist we record the alert in-app only.
+  void admin;
+  void info;
+  return "skipped";
 }
