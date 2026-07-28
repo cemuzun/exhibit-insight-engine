@@ -2,7 +2,7 @@
 // Verify required runtime packages are installed. Prints a clear install
 // command when anything is missing, then exits non-zero.
 import { createRequire } from "node:module";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 
@@ -18,8 +18,8 @@ for (const name of REQUIRED) {
   try {
     require.resolve(name);
   } catch {
-    const pinned = pkg.dependencies?.[name];
-    missing.push(pinned ? `${name}@${pinned}` : name);
+    const version = pkg.dependencies?.[name] ?? pkg.devDependencies?.[name];
+    missing.push({ name, specifier: version ? `${name}@${version}` : name });
   }
 }
 
@@ -28,9 +28,27 @@ if (missing.length === 0) {
   process.exit(0);
 }
 
-console.error("preflight: missing required packages:");
-for (const m of missing) console.error(`  - ${m}`);
-console.error("\nInstall with:");
-console.error(`  bun add ${missing.join(" ")}`);
-console.error(`  # or: npm install ${missing.join(" ")}`);
+const installArgs = missing.map((m) => m.specifier).join(" ");
+const packageManager = existsSync(resolve(here, "../bun.lockb"))
+  ? "bun"
+  : existsSync(resolve(here, "../pnpm-lock.yaml"))
+    ? "pnpm"
+    : existsSync(resolve(here, "../yarn.lock"))
+      ? "yarn"
+      : "npm";
+
+const commands = {
+  npm: `npm install ${installArgs}`,
+  bun: `bun add ${installArgs}`,
+  pnpm: `pnpm add ${installArgs}`,
+  yarn: `yarn add ${installArgs}`,
+};
+
+console.error("Error: required packages are missing:");
+for (const m of missing) console.error(`  - ${m.name}`);
+console.error("\nInstall the missing packages with:");
+const primary = commands[packageManager];
+const primaryNote = packageManager !== "npm" ? "  # recommended" : "";
+console.error(`  ${primary}${primaryNote}`);
+if (packageManager !== "npm") console.error(`  # or: npm install ${installArgs}`);
 process.exit(1);
