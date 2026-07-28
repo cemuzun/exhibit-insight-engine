@@ -130,6 +130,12 @@ export async function runPipeline(
       maxLeadsPerShow?: number;
       priorityIndustries?: string[];
       targetServices?: string[];
+      /** Optional per-run tuning of parallelism / request rates. */
+      concurrency?: number;
+      firecrawlConcurrency?: number;
+      firecrawlRpm?: number;
+      llmConcurrency?: number;
+      llmRpm?: number;
     };
   },
   admin: SupabaseClient,
