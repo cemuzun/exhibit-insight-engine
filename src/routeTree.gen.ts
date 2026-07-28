@@ -15,6 +15,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedTemplatesRouteImport } from './routes/_authenticated/templates'
 import { Route as AuthenticatedDigestsRouteImport } from './routes/_authenticated/digests'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
+import { Route as AuthenticatedSettingsScoringRouteImport } from './routes/_authenticated/settings.scoring'
 import { Route as AuthenticatedRunsNewRouteImport } from './routes/_authenticated/runs.new'
 import { Route as AuthenticatedRunsRunIdRouteImport } from './routes/_authenticated/runs.$runId'
 import { Route as AuthenticatedOutreachRunIdRouteImport } from './routes/_authenticated/outreach.$runId'
@@ -48,6 +49,12 @@ const AuthenticatedDashboardRoute = AuthenticatedDashboardRouteImport.update({
   path: '/dashboard',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedSettingsScoringRoute =
+  AuthenticatedSettingsScoringRouteImport.update({
+    id: '/settings/scoring',
+    path: '/settings/scoring',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedRunsNewRoute = AuthenticatedRunsNewRouteImport.update({
   id: '/runs/new',
   path: '/runs/new',
@@ -74,6 +81,7 @@ export interface FileRoutesByFullPath {
   '/outreach/$runId': typeof AuthenticatedOutreachRunIdRoute
   '/runs/$runId': typeof AuthenticatedRunsRunIdRoute
   '/runs/new': typeof AuthenticatedRunsNewRoute
+  '/settings/scoring': typeof AuthenticatedSettingsScoringRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -84,6 +92,7 @@ export interface FileRoutesByTo {
   '/outreach/$runId': typeof AuthenticatedOutreachRunIdRoute
   '/runs/$runId': typeof AuthenticatedRunsRunIdRoute
   '/runs/new': typeof AuthenticatedRunsNewRoute
+  '/settings/scoring': typeof AuthenticatedSettingsScoringRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -96,6 +105,7 @@ export interface FileRoutesById {
   '/_authenticated/outreach/$runId': typeof AuthenticatedOutreachRunIdRoute
   '/_authenticated/runs/$runId': typeof AuthenticatedRunsRunIdRoute
   '/_authenticated/runs/new': typeof AuthenticatedRunsNewRoute
+  '/_authenticated/settings/scoring': typeof AuthenticatedSettingsScoringRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -108,6 +118,7 @@ export interface FileRouteTypes {
     | '/outreach/$runId'
     | '/runs/$runId'
     | '/runs/new'
+    | '/settings/scoring'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -118,6 +129,7 @@ export interface FileRouteTypes {
     | '/outreach/$runId'
     | '/runs/$runId'
     | '/runs/new'
+    | '/settings/scoring'
   id:
     | '__root__'
     | '/'
@@ -129,6 +141,7 @@ export interface FileRouteTypes {
     | '/_authenticated/outreach/$runId'
     | '/_authenticated/runs/$runId'
     | '/_authenticated/runs/new'
+    | '/_authenticated/settings/scoring'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -181,6 +194,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedDashboardRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/settings/scoring': {
+      id: '/_authenticated/settings/scoring'
+      path: '/settings/scoring'
+      fullPath: '/settings/scoring'
+      preLoaderRoute: typeof AuthenticatedSettingsScoringRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/runs/new': {
       id: '/_authenticated/runs/new'
       path: '/runs/new'
@@ -212,6 +232,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedOutreachRunIdRoute: typeof AuthenticatedOutreachRunIdRoute
   AuthenticatedRunsRunIdRoute: typeof AuthenticatedRunsRunIdRoute
   AuthenticatedRunsNewRoute: typeof AuthenticatedRunsNewRoute
+  AuthenticatedSettingsScoringRoute: typeof AuthenticatedSettingsScoringRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
@@ -221,6 +242,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedOutreachRunIdRoute: AuthenticatedOutreachRunIdRoute,
   AuthenticatedRunsRunIdRoute: AuthenticatedRunsRunIdRoute,
   AuthenticatedRunsNewRoute: AuthenticatedRunsNewRoute,
+  AuthenticatedSettingsScoringRoute: AuthenticatedSettingsScoringRoute,
 }
 
 const AuthenticatedRouteRouteWithChildren =
