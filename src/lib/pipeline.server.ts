@@ -719,8 +719,19 @@ async function findExhibitorSources(
     }
   }
 
-  const ranked = candidates
-    .map((url) => ({ url, score: scoreCandidate(url) + (searchHits.has(url) ? 1 : 0) }))
+  const scoredCandidates = candidates.map((url) => ({
+    url,
+    score: scoreCandidate(url) + (searchHits.has(url) ? 1 : 0),
+  }));
+  if (diag) {
+    diag.candidates = scoredCandidates.length;
+    for (const c of scoredCandidates) {
+      if (c.score <= 0 && diag.rejected.length < 60) {
+        diag.rejected.push({ url: c.url, reason: "URL filtered — no exhibitor-list signal in the link" });
+      }
+    }
+  }
+  const ranked = scoredCandidates
     .filter((c) => c.score > 0)
     .sort((a, b) => b.score - a.score)
     .map((c) => c.url);
@@ -730,10 +741,23 @@ async function findExhibitorSources(
   const found: Array<{ url: string; markdown: string }> = [];
   const seenFound = new Set<string>();
   const addFound = (url: string, markdown: string) => {
-    if (seenFound.has(url) || !looksLikeExhibitorContent(markdown)) return;
+    if (seenFound.has(url)) return;
+    if (!looksLikeExhibitorContent(markdown)) {
+      if (diag && diag.rejected.length < 60) {
+        diag.rejected.push({
+          url,
+          reason: markdown
+            ? "Scraped but content did not look like an exhibitor list"
+            : "Page could not be scraped (blocked, empty or timed out)",
+        });
+      }
+      return;
+    }
     seenFound.add(url);
+    if (diag) diag.accepted.push(url);
     found.push({ url, markdown: trimToListing(markdown) });
   };
+
 
   // Reruns often already have useful MapYourShow detail pages cached from an
   // interrupted attempt. Use them immediately instead of waiting on the listing
