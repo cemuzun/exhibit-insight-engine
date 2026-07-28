@@ -829,8 +829,8 @@ function ReportView({
                   <td>{String(c.name ?? "[target title]")}</td>
                   <td className="text-muted-foreground">{String(c.title ?? "—")}</td>
                   <td className="font-mono text-[10px]">{String(c.classification ?? "—")}</td>
-                  <td className="font-mono">{String(c.confidence ?? "—")}</td>
-                  <td className="text-muted-foreground">{String(c.public_business_email ?? "—")}</td>
+                  <td className="font-mono">{String(c.contact_confidence ?? "—")}</td>
+                  <td className="text-muted-foreground">{String(c.business_email ?? "—")}</td>
                 </tr>
               ))}
             </tbody>
@@ -864,7 +864,8 @@ function ReportView({
                   </span>
                 </div>
                 <div className="mt-1 text-xs text-muted-foreground">
-                  {String(o.recipient_name ?? "[target]")} · {String(o.recipient_title ?? "—")} ·{" "}
+                  {String((o.recipient as Record<string, unknown> | undefined)?.name ?? "[target]")} ·{" "}
+                  {String((o.recipient as Record<string, unknown> | undefined)?.title ?? "—")} ·{" "}
                   {String(o.outreach_phase ?? "—")} · send {String(o.recommended_send_date ?? "—")}
                 </div>
                 <div className="mt-2 text-sm font-medium">{String(o.subject ?? "")}</div>
