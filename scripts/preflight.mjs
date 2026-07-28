@@ -47,6 +47,8 @@ const commands = {
 console.error("Error: required packages are missing:");
 for (const m of missing) console.error(`  - ${m.name}`);
 console.error("\nInstall the missing packages with:");
-console.error(`  ${commands[packageManager]}  ` + (packageManager !== "npm" ? "# recommended" : ""));
+const primary = commands[packageManager];
+const primaryNote = packageManager !== "npm" ? "  # recommended" : "";
+console.error(`  ${primary}${primaryNote}`);
 if (packageManager !== "npm") console.error(`  # or: npm install ${installArgs}`);
 process.exit(1);
