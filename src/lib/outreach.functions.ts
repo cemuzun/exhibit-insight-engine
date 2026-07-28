@@ -103,9 +103,9 @@ export const buildOutreachQueue = createServerFn({ method: "POST" })
       status: string;
       draft_status: string;
       blocked_reasons: string[];
-      personalization_fact: PersonalizationFact;
+      personalization_fact: Record<string, unknown>;
       service_offered: string;
-      validation: unknown;
+      validation: Record<string, unknown>;
       outreach_phase: string;
       recommended_send_date: string;
       follow_up_date: string;
@@ -125,9 +125,6 @@ export const buildOutreachQueue = createServerFn({ method: "POST" })
 
       // Spec gate: every one of the six conditions must hold before drafting.
       const facts: PersonalizationFact[] = [];
-      if (lead.evidence_text && lead.evidence_source_url_placeholder !== undefined) {
-        // placeholder branch never runs; kept for type narrowing safety
-      }
       const evidenceUrl = (lead.source_urls ?? [])[0] ?? null;
       if (lead.evidence_text && evidenceUrl) {
         facts.push({
@@ -212,9 +209,9 @@ export const buildOutreachQueue = createServerFn({ method: "POST" })
           status: "draft",
           draft_status: validation.valid ? "READY" : "NEEDS_REVIEW",
           blocked_reasons: validation.errors.map((e) => e.code),
-          personalization_fact: gate.fact,
+          personalization_fact: { ...gate.fact },
           service_offered: gate.service,
-          validation,
+          validation: { ...validation },
           outreach_phase: phase,
           recommended_send_date: dates.recommended_send_date,
           follow_up_date: dates.follow_up_date,
