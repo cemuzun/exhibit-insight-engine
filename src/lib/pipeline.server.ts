@@ -62,8 +62,13 @@ async function generateStructured<T>(
 ): Promise<T> {
   let lastText = "";
 
+  // Every model call goes through the shared LLM limiter (concurrency cap +
+  // per-minute throttle) and is retried with exponential backoff on 429/5xx.
+  const call = (args: Parameters<typeof generateText>[0]) =>
+    guarded(llmLimiter, () => generateText(args), { label: "llm generate" });
+
   try {
-    const { output } = await generateText({
+    const { output } = await call({
       model,
       output: Output.object({ schema: schema as never }),
       prompt,
@@ -82,7 +87,7 @@ async function generateStructured<T>(
 OUTPUT FORMAT: Reply with a single valid JSON object only. No markdown fences, no commentary, no trailing text. Use null for unknown values and never omit required keys.`;
 
   try {
-    const { text } = await generateText({ model, prompt: jsonOnly });
+    const { text } = await call({ model, prompt: jsonOnly });
     lastText = text || lastText;
     const parsed = schema.safeParse(extractJson(text));
     if (parsed.success && parsed.data !== undefined) return parsed.data;
@@ -90,7 +95,7 @@ OUTPUT FORMAT: Reply with a single valid JSON object only. No markdown fences, n
     // fall through to repair
   }
 
-  const { text: repaired } = await generateText({
+  const { text: repaired } = await call({
     model,
     prompt: `The following text was supposed to be a single valid JSON object but could not be parsed or validated. Return ONLY the corrected JSON object, preserving all usable data and using null for unknown values.
 
@@ -103,6 +108,7 @@ ${lastText.slice(0, 20000)}`,
     "Could not extract structured data from the source page after 3 attempts. The page may be blocked, empty, or not a trade show listing.",
   );
 }
+
 
 
 type ProgressFn = (stage: string, message: string) => Promise<void>;
