@@ -44,7 +44,7 @@ export const DEFAULT_SCORING: ScoringSettings = {
 };
 
 /** Merge a stored (possibly partial) settings row with the defaults. */
-export function normalizeScoringSettings(row: Partial<ScoringSettings> | null | undefined): ScoringSettings {
+export function normalizeScoringSettings(row: Record<string, unknown> | null | undefined): ScoringSettings {
   const stored = (row?.weights ?? {}) as Record<string, unknown>;
   const weights: Record<string, number> = {};
   for (const c of SCORE_COMPONENTS) {
@@ -62,7 +62,9 @@ export function normalizeScoringSettings(row: Partial<ScoringSettings> | null | 
     tier3_min: clamp(row?.tier3_min, DEFAULT_SCORING.tier3_min),
     qualified_min: clamp(row?.qualified_min, DEFAULT_SCORING.qualified_min),
     tier1_requires_verified_contact:
-      row?.tier1_requires_verified_contact ?? DEFAULT_SCORING.tier1_requires_verified_contact,
+      typeof row?.tier1_requires_verified_contact === "boolean"
+        ? row.tier1_requires_verified_contact
+        : DEFAULT_SCORING.tier1_requires_verified_contact,
   };
 }
 
