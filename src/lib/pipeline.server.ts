@@ -2,6 +2,8 @@ import { generateText, Output, NoObjectGeneratedError } from "ai";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createLovableAiGatewayProvider, requireLovableKey } from "./ai-gateway.server";
 import { firecrawlScrape, firecrawlSearch } from "./firecrawl.server";
+import { recentCachedScrapesForHost } from "./firecrawl-cache.server";
+import { normalizedCompanyKey, parseExhibitorsFromMarkdown } from "./exhibitor-parser";
 import {
   guarded,
   llmLimiter,
@@ -623,7 +625,7 @@ function guessExhibitorUrls(officialUrl: string): string[] {
 async function findExhibitorSources(
   officialUrl: string,
   eventName: string,
-  max = 3,
+  max = 12,
 ): Promise<Array<{ url: string; markdown: string }>> {
   // Each scrape can take up to 90s; chained together a single dead event site
   // could eat the whole run. Give the hunt one overall budget and move on.
@@ -671,17 +673,45 @@ async function findExhibitorSources(
     .map((c) => c.url);
 
   const found: Array<{ url: string; markdown: string }> = [];
+  const seenFound = new Set<string>();
+  const addFound = (url: string, markdown: string) => {
+    if (seenFound.has(url) || !looksLikeExhibitorContent(markdown)) return;
+    seenFound.add(url);
+    found.push({ url, markdown: trimToListing(markdown) });
+  };
+
+  // Reruns often already have useful MapYourShow detail pages cached from an
+  // interrupted attempt. Use them immediately instead of waiting on the listing
+  // page or the model again.
+  const cachedHosts = new Set<string>();
+  for (const url of ranked) {
+    try {
+      const host = new URL(url).hostname;
+      if (/directory\.|mapyourshow|a2zinc/i.test(host)) cachedHosts.add(host);
+    } catch {
+      // ignore malformed search results
+    }
+  }
+  for (const host of cachedHosts) {
+    if (found.length >= max) break;
+    const cached = await recentCachedScrapesForHost(host, { limit: max });
+    for (const page of cached) {
+      addFound(page.url, page.markdown);
+      if (found.length >= max) break;
+    }
+  }
+
   for (const url of ranked.slice(0, 10)) {
     if (outOfTime() || found.length >= max) break;
     // Directory platforms render the list client-side; give them a moment.
     const page = await firecrawlScrape(url, { formats: ["markdown"], waitFor: 4000 }).catch(() => null);
     const md = page?.markdown ?? "";
-    if (looksLikeExhibitorContent(md)) found.push({ url, markdown: trimToListing(md) });
+    addFound(url, md);
   }
 
   const homeMd = home?.markdown ?? "";
   if (found.length === 0 && looksLikeExhibitorContent(homeMd)) {
-    found.push({ url: officialUrl, markdown: trimToListing(homeMd) });
+    addFound(officialUrl, homeMd);
   }
   return found;
 }
@@ -1192,7 +1222,7 @@ ${sourceLinks.slice(0, 80).join("\n")}`,
         sources = await withHeartbeat(
           "extract_exhibitors",
           `Looking for the exhibitor list of ${ev.event_name}`,
-          () => findExhibitorSources(ev.official_url, ev.event_name),
+          () => findExhibitorSources(ev.official_url, ev.event_name, Math.max(maxLeads, 12)),
         );
         if (sources.length === 0) {
           limitations.push(
@@ -1215,9 +1245,35 @@ ${sourceLinks.slice(0, 80).join("\n")}`,
       }
     }
 
-    // Try each candidate source until one actually yields exhibitors.
+    // Try each candidate source until enough exhibitors are found. Detail pages
+    // produce one company each, while listing pages can produce many.
     let exhibitors: import("zod").infer<typeof ExhibitorListSchema>["exhibitors"] = [];
+    const addCandidateExhibitors = (items: typeof exhibitors) => {
+      const seen = new Set(exhibitors.map((item) => normalizedCompanyKey(item.company_name)));
+      for (const item of items) {
+        const key = normalizedCompanyKey(item.company_name);
+        if (!key || seen.has(key)) continue;
+        exhibitors.push(item);
+        seen.add(key);
+        if (exhibitors.length >= maxLeads) break;
+      }
+    };
+
     for (const src of sources) {
+      const deterministic = parseExhibitorsFromMarkdown(src.markdown, src.url, maxLeads * 2);
+      if (deterministic.length > 0) {
+        addCandidateExhibitors(deterministic);
+        await pushScoringEntry({
+          at: new Date().toISOString(),
+          company: deterministic[0]?.company_name ?? "—",
+          show: ev.event_name,
+          status: "scored",
+          reason: `Found ${deterministic.length} exhibitor(s) directly from ${new URL(src.url).hostname}`,
+        });
+        if (exhibitors.length >= maxLeads) break;
+        continue;
+      }
+
       const exhibitorPrompt = `${CORE_SYSTEM}
 
 TASK: Extract EXHIBITING COMPANIES from the source below for event "${ev.event_name}". Return up to ${maxLeads * 2} candidates. Skip associations, government bodies, media partners, sponsors that aren't exhibitors, universities, and service vendors that are not the trade show's own exhibitors. Normalize company names (strip Inc./LLC/etc for normalized_company_name).
@@ -1238,13 +1294,15 @@ ${src.markdown.slice(0, 60000)}`;
         }
         limitations.push(...(exhibitorList.limitations ?? []));
         if (exhibitorList.exhibitors.length > 0) {
-          exhibitors = exhibitorList.exhibitors.slice(0, maxLeads);
-          break;
+          addCandidateExhibitors(exhibitorList.exhibitors);
+          if (exhibitors.length >= maxLeads) break;
         }
       } catch (e) {
         limitations.push(`Exhibitor extraction failed for ${ev.event_name}: ${(e as Error).message}`);
       }
     }
+
+    exhibitors = exhibitors.slice(0, maxLeads);
 
     if (exhibitors.length === 0) {
       limitations.push(`No exhibitors could be extracted for ${ev.event_name}.`);
