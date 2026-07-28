@@ -858,7 +858,7 @@ export async function runPipeline(
   await admin.from("research_runs").update({ status: "scraping" }).eq("id", runId);
   await progress("scrape_source", `Fetching ${input.inputUrl}`);
 
-  const maxEvents = Math.max(1, Math.min(2000, input.filters.maxEvents ?? 500));
+  const maxEvents = Math.max(1, Math.min(5000, input.filters.maxEvents ?? 2000));
   const maxPages = Math.max(1, Math.min(50, input.filters.maxDirectoryPages ?? 25));
 
   // Re-run reuse window: pages fetched inside this window are served from the
