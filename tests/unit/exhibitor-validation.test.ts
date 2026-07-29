@@ -129,3 +129,55 @@ describe("account chrome and dates", () => {
   });
 });
 
+
+describe("CTA / navigation chrome at the validation gate", () => {
+  const GASTECH_CTA =
+    "[REGISTER AS A VISITOR](https://www.gastechevent.com/visit/visitor-registration/)";
+
+  it("rejects the exact reported record", () => {
+    expect(hasCompanyNameStructure(GASTECH_CTA)).toBe(false);
+    const r = validateExhibitorRow({
+      companyName: GASTECH_CTA,
+      boothNumber: "1042",
+      profileUrl: "https://www.gastechevent.com/visit/visitor-registration/",
+      sourceUrl: "https://www.gastechevent.com/exhibitor-list/",
+      sourceMarkdown: exhibitorPage,
+    });
+    expect(r.verdict).toBe("reject");
+    expect(r.reason).toBe("NAME_NOT_COMPANY_SHAPED");
+  });
+
+  it("rejects the whole CTA family", () => {
+    for (const name of [
+      "REGISTER AS A VISITOR",
+      "Register To Attend",
+      "Visitor Registration",
+      "Attendee Registration",
+      "Become An Exhibitor",
+      "Book A Stand",
+      "Request A Booth",
+      "Get Your Badge",
+      "Buy Tickets",
+    ]) {
+      expect(
+        validateExhibitorRow({
+          companyName: name,
+          sourceUrl: "https://show.com/exhibitors",
+          sourceMarkdown: exhibitorPage,
+        }).verdict,
+      ).toBe("reject");
+    }
+  });
+
+  it("accepts a real company whose name contains directory words", () => {
+    const r = validateExhibitorRow({
+      companyName: "Gastech Exhibitor Technologies Ltd.",
+      boothNumber: "1042",
+      companyWebsite: "https://gastechexhibitor.com",
+      sourceUrl: "https://www.gastechevent.com/exhibitor-list/",
+      sourceMarkdown: "## Exhibitor List\n| Gastech Exhibitor Technologies Ltd. | 1042 |",
+    });
+    expect(r.verdict).toBe("accept");
+    expect(r.boothNumber).toBe("1042");
+  });
+});
