@@ -5,7 +5,16 @@ import { createResearchRun, runResearch } from "@/lib/research.functions";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/runs/new")({
-  head: () => ({ meta: [{ title: "New run — BoothLens" }, { name: "robots", content: "noindex" }] }),
+  head: () => ({
+    meta: [
+      { title: "New run — BoothLens" },
+      { name: "description", content: "Start a new BoothLens research run: paste a trade show directory or event URL and set targeting, scoring, and crawl limits." },
+      { property: "og:title", content: "Start a trade show research run — BoothLens" },
+      { property: "og:description", content: "Configure targeting and crawl limits, then turn a trade show URL into ranked leads." },
+      { name: "robots", content: "noindex" },
+    ],
+  }),
+
   component: NewRun,
 });
 
