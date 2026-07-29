@@ -5,7 +5,16 @@ import { listRuns, deleteRun } from "@/lib/research.functions";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
-  head: () => ({ meta: [{ title: "Runs — BoothLens" }, { name: "robots", content: "noindex" }] }),
+  head: () => ({
+    meta: [
+      { title: "Runs — BoothLens" },
+      { name: "description", content: "Your BoothLens research runs: every trade show analyzed, with exhibitor counts, lead tiers, and outreach status in one dashboard." },
+      { property: "og:title", content: "Research runs dashboard — BoothLens" },
+      { property: "og:description", content: "Review every trade show you've analyzed and jump into ranked exhibitor leads." },
+      { name: "robots", content: "noindex" },
+    ],
+  }),
+
   component: Dashboard,
 });
 
