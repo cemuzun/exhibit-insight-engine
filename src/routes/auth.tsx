@@ -5,7 +5,16 @@ import { lovable } from "@/integrations/lovable";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/auth")({
-  head: () => ({ meta: [{ title: "Sign in — BoothLens" }, { name: "robots", content: "noindex" }] }),
+  head: () => ({
+    meta: [
+      { title: "Sign in — BoothLens" },
+      { name: "description", content: "Sign in or create a BoothLens account to run trade show exhibitor research and track your lead pipeline." },
+      { property: "og:title", content: "Sign in to BoothLens" },
+      { property: "og:description", content: "Access your trade show research runs, exhibitor lists, and outreach queue." },
+      { name: "robots", content: "noindex" },
+    ],
+  }),
+
   component: AuthPage,
 
 });
