@@ -286,6 +286,7 @@ export function parseExhibitorsFromMarkdown(markdown: string, sourceUrl: string,
   }
 
   for (const match of markdown.matchAll(/(?<!!)\[([^\]\n]{2,100})\]\(([^)\s"]*exhibitor-details\.cfm[^)\s"]*)/gi)) {
+    if (isNavigationHref(match[2])) continue;
     addExhibitor(out, {
       company_name: match[1],
       normalized_company_name: match[1],
@@ -307,8 +308,10 @@ export function parseExhibitorsFromMarkdown(markdown: string, sourceUrl: string,
     if (out.size >= max) return Array.from(out.values());
   }
 
-  if (out.size === 0) {
-    // Plain company-per-line lists: PDF handouts and simple HTML pages.
+  if (out.size === 0 && (isPdfSource(sourceUrl) || hasExhibitorDirectoryContext(markdown, sourceUrl))) {
+    // Plain company-per-line lists: PDF handouts and simple HTML pages. Only
+    // allowed for HTML when the page really is an exhibitor directory —
+    // otherwise a navigation-heavy page turns every menu item into a company.
     for (const ex of parseExhibitorsFromPlainList(markdown, max)) addExhibitor(out, ex);
   }
 
