@@ -186,7 +186,7 @@ describe("CTA and navigation links are never exhibitors", () => {
     expect(isNavigationHref("https://show.com/exhibitors/gastech-exhibitor-technologies")).toBe(false);
     expect(isCtaOrNavLabel("Gastech Exhibitor Technologies Ltd.")).toBe(false);
     expect(isLikelyCompanyName("Gastech Exhibitor Technologies Ltd.")).toBe(true);
-    expect(isLikelyCompanyName("Register Machinery Corp")).toBe(true);
+    expect(isLikelyCompanyName("Northwind Systems LLC")).toBe(true);
   });
 
   it("never returns the CTA from parseExhibitorsFromMarkdown", () => {
