@@ -11,6 +11,8 @@ import { ScoringFeed, type ScoringFeedEntry } from "@/components/ScoringFeed";
 
 import { ExhibitorsTable, type ExhibitorRow } from "@/components/ExhibitorsTable";
 import { LiveExhibitors, type ExhibitorSample } from "@/components/LiveExhibitors";
+import { cleanCompanyName, isLikelyCompanyName } from "@/lib/exhibitor-parser";
+
 import { ShowsExplorer, type ExplorerEvent, type ExplorerLead } from "@/components/ShowsExplorer";
 
 import {
