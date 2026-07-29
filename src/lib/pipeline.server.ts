@@ -3,7 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { createLovableAiGatewayProvider, requireLovableKey } from "./ai-gateway.server";
 import { firecrawlMap, firecrawlScrape, firecrawlSearch } from "./firecrawl.server";
 import { recentCachedScrapesForHost } from "./firecrawl-cache.server";
-import { isLikelyCompanyName, normalizeCandidateName, normalizedCompanyKey, parseExhibitorsFromMarkdown } from "./exhibitor-parser";
+import { normalizeCandidateName, parseExhibitorsFromMarkdown } from "./exhibitor-parser";
 import { validateExhibitorRow } from "./exhibitor-validation";
 import { discoverMapYourShowBase, fetchMapYourShowExhibitors, isMapYourShowUrl } from "./mapyourshow.server";
 
