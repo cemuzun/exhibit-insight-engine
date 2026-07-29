@@ -118,12 +118,30 @@ function addExhibitor(out: Map<string, ExhibitorRecord>, exhibitor: ExhibitorRec
   out.set(key, {
     ...exhibitor,
     company_name: company,
-    normalized_company_name: exhibitor.normalized_company_name ?? key,
+    // Dedupe key, never a display string — it must never carry markup.
+    normalized_company_name: key,
   });
+}
+
+
+/**
+ * Single normalization point for any extracted candidate name (deterministic
+ * parser, MapYourShow, or LLM output). Returns null when the value is not a
+ * usable company name, so callers validate and store the exact same string.
+ */
+export function normalizeCandidateName(
+  value: string | null | undefined,
+): { company: string; key: string } | null {
+  const company = cleanCompanyName(value ?? "");
+  if (!company || !isLikelyCompanyName(company)) return null;
+  const key = normalizedCompanyKey(company);
+  if (!key) return null;
+  return { company, key };
 }
 
 const LIST_NOISE_RE =
   /^(as of|exhibitors?|exhibitor list|company|booth|page \d+|updated|table of contents|\d{1,4})\b/i;
+
 
 /**
  * PDF exhibitor lists (and simple HTML lists) are just one company per line,

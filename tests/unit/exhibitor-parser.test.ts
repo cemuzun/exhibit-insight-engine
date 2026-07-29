@@ -1,5 +1,59 @@
 import { describe, expect, it } from "vitest";
-import { parseExhibitorsFromMarkdown, parseExhibitorsFromPlainList } from "@/lib/exhibitor-parser";
+import {
+  cleanCompanyName,
+  isLikelyCompanyName,
+  parseExhibitorsFromMarkdown,
+  parseExhibitorsFromPlainList,
+} from "@/lib/exhibitor-parser";
+
+const REGISTER_CHROME =
+  "[REGISTER AS A VISITOR](https://www.gastechevent.com/visit/visitor-registration/)";
+
+describe("page chrome is never a company", () => {
+  it("rejects the registration link, footer policies, account chrome and dates", () => {
+    for (const value of [
+      REGISTER_CHROME,
+      "REGISTER AS A VISITOR",
+      "Age Policy",
+      "Log In / Create Account",
+      "OCTOBER 12-15, 2026",
+    ]) {
+      expect(isLikelyCompanyName(value)).toBe(false);
+    }
+  });
+
+  it("strips markdown links down to the label", () => {
+    expect(cleanCompanyName("[Acme Widgets Inc](https://acme.com)")).toBe("Acme Widgets Inc");
+    expect(cleanCompanyName(REGISTER_CHROME)).toBe("REGISTER AS A VISITOR");
+  });
+
+  it("keeps chrome out of plain-list and markdown extraction", () => {
+    const markdown = [
+      "## Exhibitors",
+      `- ${REGISTER_CHROME}`,
+      "- Age Policy",
+      "- Acme Widgets Inc",
+    ].join("\n");
+
+    for (const rows of [
+      parseExhibitorsFromPlainList(markdown, 50),
+      parseExhibitorsFromMarkdown(markdown, "https://www.gastechevent.com/exhibitors", 50),
+    ]) {
+      const names = rows.map((r) => r.company_name);
+      expect(names).toContain("Acme Widgets Inc");
+      expect(names).not.toContain("REGISTER AS A VISITOR");
+      expect(names).not.toContain("Age Policy");
+      for (const name of names) expect(name).not.toMatch(/[[\]()]|https?:/);
+    }
+  });
+
+  it("emits a markup-free normalized_company_name dedupe key", () => {
+    const rows = parseExhibitorsFromPlainList("- [Acme Widgets Inc](https://acme.com)", 10);
+    expect(rows[0].company_name).toBe("Acme Widgets Inc");
+    expect(rows[0].normalized_company_name).toBe("acmewidgets");
+  });
+});
+
 
 describe("parseExhibitorsFromMarkdown", () => {
   it("extracts a MapYourShow exhibitor detail page without AI", () => {
