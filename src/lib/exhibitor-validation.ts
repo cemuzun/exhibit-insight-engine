@@ -11,7 +11,7 @@
  * confirmed exhibitors.
  */
 
-import { cleanCompanyName, isLikelyCompanyName } from "./exhibitor-parser";
+import { cleanCompanyName, isCtaOrNavLabel, isLikelyCompanyName } from "./exhibitor-parser";
 
 export type ExhibitorValidationVerdict = "accept" | "downgrade" | "reject";
 
