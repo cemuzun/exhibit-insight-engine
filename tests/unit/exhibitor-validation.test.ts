@@ -100,4 +100,30 @@ describe("account chrome and dates", () => {
     expect(hasCompanyNameStructure("Hennig, Inc.")).toBe(true);
     expect(hasCompanyNameStructure("Hexagon")).toBe(true);
   });
+
+  it("rejects a registration link extracted as a company", () => {
+    const raw = "[REGISTER AS A VISITOR](https://www.gastechevent.com/visit/visitor-registration/)";
+    expect(hasCompanyNameStructure(raw)).toBe(false);
+    const r = validateExhibitorRow({
+      companyName: raw,
+      sourceUrl: "https://www.gastechevent.com/exhibitors",
+      sourceMarkdown: exhibitorPage,
+    });
+    expect(r.verdict).toBe("reject");
+    expect(r.reason).toBe("NAME_NOT_COMPANY_SHAPED");
+  });
+
+  it("accepts a markdown-wrapped company under a clean, markup-free name", () => {
+    const cleaned = cleanCompanyName("[Acme Displays Inc.](https://acme.com/exhibitors/acme)");
+    expect(cleaned).toBe("Acme Displays Inc.");
+    expect(cleaned).not.toMatch(/[[\]()]|https?:/);
+    const r = validateExhibitorRow({
+      companyName: cleaned,
+      boothNumber: "1042",
+      sourceUrl: "https://show.com/exhibitor-list",
+      sourceMarkdown: exhibitorPage,
+    });
+    expect(r.verdict).toBe("accept");
+  });
 });
+
