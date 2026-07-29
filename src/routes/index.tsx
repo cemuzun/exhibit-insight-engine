@@ -9,8 +9,36 @@ export const Route = createFileRoute("/")({
       { name: "description", content: "Paste any trade show URL. Get ranked exhibitor leads, decision-maker targets, budget estimates, and drafted outreach — built for booth, LED, and exhibit-services vendors." },
       { property: "og:title", content: "BoothLens — Trade Show Lead Intelligence" },
       { property: "og:description", content: "Turn trade show directories into a prioritized sales pipeline." },
+      { property: "og:url", content: "https://exhibit-insight-engine.lovable.app/" },
+    ],
+    links: [{ rel: "canonical", href: "https://exhibit-insight-engine.lovable.app/" }],
+    scripts: [
+      {
+        type: "application/ld+json",
+        children: JSON.stringify({
+          "@context": "https://schema.org",
+          "@graph": [
+            {
+              "@type": "Organization",
+              "@id": "https://exhibit-insight-engine.lovable.app/#organization",
+              name: "BoothLens",
+              url: "https://exhibit-insight-engine.lovable.app/",
+              description:
+                "BoothLens turns trade show directories into ranked exhibitor leads with verified decision-maker targets and drafted outreach for booth, LED, and exhibit-services vendors.",
+            },
+            {
+              "@type": "WebSite",
+              "@id": "https://exhibit-insight-engine.lovable.app/#website",
+              name: "BoothLens",
+              url: "https://exhibit-insight-engine.lovable.app/",
+              publisher: { "@id": "https://exhibit-insight-engine.lovable.app/#organization" },
+            },
+          ],
+        }),
+      },
     ],
   }),
+
   component: Landing,
 });
 
