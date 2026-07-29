@@ -88,7 +88,10 @@ function Landing() {
           </div>
         </div>
 
-        <div className="mt-20 grid gap-6 md:grid-cols-3">
+        <h2 className="mt-20 text-2xl font-semibold tracking-tight">Why BoothLens</h2>
+
+        <div className="mt-6 grid gap-6 md:grid-cols-3">
+
           {[
             { h: "Verified over volume", p: "We surface fewer, better leads. Every claim has a source; unverified people are returned as target titles, never fabricated." },
             { h: "Booth-aware scoring", p: "9-component score: show activity, booth complexity, LED fit, timing, decision-maker path, service fit — no vanity metrics." },
