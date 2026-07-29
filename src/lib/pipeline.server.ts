@@ -2058,7 +2058,25 @@ ${src.markdown.slice(0, 60000)}`;
 
     if (!unlimitedLeads) exhibitors = exhibitors.slice(0, requestedLeads);
 
+    // Final defensive gate: whatever path produced a candidate (deterministic
+    // parser, MapYourShow, AI), nothing reaches persistence or lead creation
+    // without passing the shared CTA/navigation and company-shape checks.
+    {
+      const before = exhibitors.length;
+      exhibitors = exhibitors.filter(
+        (ex) => !isCtaOrNavLabel(ex.company_name) && hasCompanyNameStructure(ex.company_name),
+      );
+      const dropped = before - exhibitors.length;
+      if (dropped > 0) {
+        metrics.records_rejected += dropped;
+        metrics.rejection_reasons.FINAL_GATE_NOT_COMPANY =
+          (metrics.rejection_reasons.FINAL_GATE_NOT_COMPANY ?? 0) + dropped;
+        limitations.push(`Dropped ${dropped} non-company row(s) for ${ev.event_name} at the final validation gate.`);
+      }
+    }
+
     if (exhibitors.length === 0) {
+
       limitations.push(`No exhibitors could be extracted for ${ev.event_name}.`);
       await pushScoringEntry({
         at: new Date().toISOString(),
