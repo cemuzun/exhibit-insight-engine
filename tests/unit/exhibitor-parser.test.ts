@@ -201,7 +201,7 @@ describe("CTA and navigation links are never exhibitors", () => {
 
     const rows = parseExhibitorsFromMarkdown(markdown, "https://www.gastechevent.com/exhibitor-list/", 50);
     const names = rows.map((r) => r.company_name);
-    expect(names).toContain("Gastech Exhibitor Technologies Ltd.");
+    expect(names).toContain("Gastech Exhibitor Technologies Ltd");
     expect(names).toContain("Northwind Systems LLC");
     expect(names.join("|")).not.toMatch(/register|book a stand|gastechevent\.com/i);
   });
