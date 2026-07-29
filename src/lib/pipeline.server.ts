@@ -1820,19 +1820,22 @@ ${sourceLinks.slice(0, 80).join("\n")}`,
         if (method === "AI") metrics.ai_records += 1;
         else metrics.deterministic_records += 1;
 
-        const key = normalizedCompanyKey(item.company_name);
-        if (!key || !isLikelyCompanyName(item.company_name)) {
+        // Normalize once, then validate AND store the same cleaned value so a
+        // markdown/HTML-wrapped name can never reach the database or the UI.
+        const normalized = normalizeCandidateName(item.company_name);
+        if (!normalized) {
           metrics.records_rejected += 1;
           metrics.rejection_reasons.EMPTY_COMPANY_NAME =
             (metrics.rejection_reasons.EMPTY_COMPANY_NAME ?? 0) + 1;
           continue;
         }
+        const { company, key } = normalized;
 
 
-        const line = evidenceLineFor(src.markdown, item.company_name);
+        const line = evidenceLineFor(src.markdown, company);
         const evidenceText = item.evidence_text?.trim() || line?.text || null;
         const check = checkEvidence({
-          companyName: item.company_name,
+          companyName: company,
           evidenceText,
           sourceContent: src.markdown,
           locator: line ? { line: line.line, url: src.url } : { url: src.url },
@@ -1844,7 +1847,7 @@ ${sourceLinks.slice(0, 80).join("\n")}`,
         }
 
         const validation = validateExhibitorRow({
-          companyName: item.company_name,
+          companyName: company,
           boothNumber: item.booth_number,
           profileUrl: item.profile_url,
           companyWebsite: item.company_website,
@@ -1856,7 +1859,7 @@ ${sourceLinks.slice(0, 80).join("\n")}`,
           metrics.records_rejected += 1;
           metrics.rejection_reasons[validation.reason] = (metrics.rejection_reasons[validation.reason] ?? 0) + 1;
           if (diag.rejected.length < 40) {
-            diag.rejected.push({ url: `${src.url} :: ${item.company_name}`, reason: validation.reason });
+            diag.rejected.push({ url: `${src.url} :: ${company}`, reason: validation.reason });
           }
           continue;
         }
@@ -1867,6 +1870,8 @@ ${sourceLinks.slice(0, 80).join("\n")}`,
 
         const record: ExtractedExhibitor = {
           ...item,
+          company_name: company,
+          normalized_company_name: key,
           booth_number: validation.boothNumber,
           source_url: src.url,
           source_type: sourceType,
@@ -1879,14 +1884,15 @@ ${sourceLinks.slice(0, 80).join("\n")}`,
 
           exhibitor_instance_key: exhibitorInstanceKey({
             eventId: ev.id,
-            companyName: item.company_name,
-            normalizedCompanyName: item.normalized_company_name,
+            companyName: company,
+            normalizedCompanyName: key,
             profileUrl: item.profile_url,
             boothNumber: item.booth_number,
             companyWebsite: item.company_website,
           }),
-          account_key: accountKey({ companyWebsite: item.company_website, companyName: item.company_name }),
+          account_key: accountKey({ companyWebsite: item.company_website, companyName: company }),
         };
+
 
         if (seen.has(record.exhibitor_instance_key)) {
           metrics.duplicates_grouped += 1;
