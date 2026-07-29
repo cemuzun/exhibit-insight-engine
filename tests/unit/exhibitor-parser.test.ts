@@ -4,6 +4,9 @@ import {
   isLikelyCompanyName,
   parseExhibitorsFromMarkdown,
   parseExhibitorsFromPlainList,
+  isCtaOrNavLabel,
+  isNavigationHref,
+  isNavigationLinkLine,
 } from "@/lib/exhibitor-parser";
 
 const REGISTER_CHROME =
@@ -133,5 +136,95 @@ describe("plain list (PDF) exhibitor extraction", () => {
   it("falls back to plain list parsing from markdown", () => {
     const rows = parseExhibitorsFromMarkdown(pdfMarkdown, "https://x.org/list.pdf", 100);
     expect(rows.length).toBeGreaterThanOrEqual(4);
+  });
+});
+
+const GASTECH_CTA_URL = "https://www.gastechevent.com/visit/visitor-registration/";
+const GASTECH_CTA = `[REGISTER AS A VISITOR](${GASTECH_CTA_URL})`;
+
+describe("CTA and navigation links are never exhibitors", () => {
+  it("rejects the exact reported record by label and by href", () => {
+    expect(isLikelyCompanyName(GASTECH_CTA)).toBe(false);
+    expect(isCtaOrNavLabel(GASTECH_CTA)).toBe(true);
+    expect(isNavigationHref(GASTECH_CTA_URL)).toBe(true);
+    expect(isNavigationLinkLine(`- ${GASTECH_CTA}`)).toBe(true);
+  });
+
+  it("rejects the CTA label family", () => {
+    for (const label of [
+      "REGISTER AS A VISITOR",
+      "Register to Attend",
+      "Visitor Registration",
+      "Attendee Registration",
+      "Become an Exhibitor",
+      "Book a Stand",
+      "Request a Booth",
+      "Get Your Badge",
+      "Buy Tickets",
+      "Plan Your Visit",
+      "Why Exhibit",
+    ]) {
+      expect(isCtaOrNavLabel(label)).toBe(true);
+      expect(isLikelyCompanyName(label)).toBe(false);
+    }
+  });
+
+  it("treats navigation hrefs as non-directory links", () => {
+    for (const href of [
+      "https://show.com/visit/visitor-registration/",
+      "https://show.com/register",
+      "/attendee/tickets",
+      "https://show.com/login?next=/exhibitors",
+      "https://show.com/book-a-stand/",
+    ]) {
+      expect(isNavigationHref(href)).toBe(true);
+    }
+  });
+
+  it("does not reject legitimate exhibitor links or company websites", () => {
+    expect(isNavigationHref("https://gastechexhibitor.com")).toBe(false);
+    expect(isNavigationHref("https://show.com/exhibitors/gastech-exhibitor-technologies")).toBe(false);
+    expect(isCtaOrNavLabel("Gastech Exhibitor Technologies Ltd.")).toBe(false);
+    expect(isLikelyCompanyName("Gastech Exhibitor Technologies Ltd.")).toBe(true);
+    expect(isLikelyCompanyName("Northwind Systems LLC")).toBe(true);
+  });
+
+  it("never returns the CTA from parseExhibitorsFromMarkdown", () => {
+    const markdown = [
+      "# Gastech Exhibition",
+      `[REGISTER AS A VISITOR](${GASTECH_CTA_URL})`,
+      "[Book a Stand](https://www.gastechevent.com/exhibit/book-a-stand/)",
+      "## Exhibitor List",
+      "- Gastech Exhibitor Technologies Ltd. — Booth 1042",
+      "- Northwind Systems LLC — Booth B204",
+    ].join("\n");
+
+    const rows = parseExhibitorsFromMarkdown(markdown, "https://www.gastechevent.com/exhibitor-list/", 50);
+    const names = rows.map((r) => r.company_name);
+    expect(names).toContain("Gastech Exhibitor Technologies Ltd");
+    expect(names).toContain("Northwind Systems LLC");
+    expect(names.join("|")).not.toMatch(/register|book a stand|gastechevent\.com/i);
+  });
+
+  it("does not mine a navigation-heavy HTML page for companies", () => {
+    const navPage = [
+      "# Gastech Exhibition & Conference",
+      `[REGISTER AS A VISITOR](${GASTECH_CTA_URL})`,
+      "[Plan Your Visit](https://www.gastechevent.com/visit/)",
+      "[Conference Programme](https://www.gastechevent.com/conference/)",
+      "Age Policy",
+    ].join("\n");
+
+    expect(parseExhibitorsFromMarkdown(navPage, "https://www.gastechevent.com/", 50)).toHaveLength(0);
+  });
+
+  it("still allows the plain-list fallback for PDF exhibitor handouts", () => {
+    const pdf = ["Acme Displays Inc.", "Northwind Systems LLC", "Hennig, Inc."].join("\n");
+    const rows = parseExhibitorsFromMarkdown(pdf, "https://show.com/files/handout.pdf", 50);
+    expect(rows.map((r) => r.company_name)).toEqual([
+      "Acme Displays Inc.",
+      "Northwind Systems LLC",
+      "Hennig, Inc.",
+    ]);
   });
 });

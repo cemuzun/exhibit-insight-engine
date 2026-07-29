@@ -11,7 +11,7 @@ import { ScoringFeed, type ScoringFeedEntry } from "@/components/ScoringFeed";
 
 import { ExhibitorsTable, type ExhibitorRow } from "@/components/ExhibitorsTable";
 import { LiveExhibitors, type ExhibitorSample } from "@/components/LiveExhibitors";
-import { cleanCompanyName, isLikelyCompanyName } from "@/lib/exhibitor-parser";
+import { cleanCompanyName, isCtaOrNavLabel, isLikelyCompanyName } from "@/lib/exhibitor-parser";
 
 import { ShowsExplorer, type ExplorerEvent, type ExplorerLead } from "@/components/ShowsExplorer";
 
@@ -174,9 +174,14 @@ function RunDetail() {
   }
 
   const { run, events, leads } = data;
-  const allLeads = leads as unknown as Lead[];
+  // Read-time guard: rows stored before the CTA/navigation filters were added
+  // (e.g. "REGISTER AS A VISITOR") stay hidden without touching stored data.
+  const allLeads = (leads as unknown as Lead[]).filter(
+    (l) => !isCtaOrNavLabel((l as { company_name?: string }).company_name ?? ""),
+  );
   // Filters run on the client so results keep narrowing live as rows stream in.
   const typedLeads = filterLeads(allLeads, filters);
+
   const industries = industryOptions(allLeads);
   const windowDays = filters.window === "all" ? null : Number(filters.window);
   const visibleEvents = events.filter((e: any) => {
