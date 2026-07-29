@@ -42,12 +42,72 @@ const NAV_NOISE = new Set(
   ].map((s) => s.toLowerCase()),
 );
 
+/**
+ * Calls to action and navigation labels a directory page is full of. Shared by
+ * the parser and the validation gate so both paths reject the same strings —
+ * e.g. "REGISTER AS A VISITOR" lifted out of a markdown link label.
+ */
+const CTA_NAV_LABEL_RE: RegExp[] = [
+  /\bregister\s+(as|to|for|now|here|online|your)\b/i,
+  /\b(visitor|attendee|exhibitor|group|online|free|badge|conference|delegate)\s+registration\b/i,
+  /\bregistration\s+(is\s+)?(open|now|here|form|page|info)\b/i,
+  /^\s*(pre-?)?registration\s*$/i,
+  /\b(become|be)\s+an?\s+(exhibitor|sponsor|partner|attendee)\b/i,
+  /\b(book|reserve|request|get)\s+(a|an|your|my)?\s*(stand|booth|space|badge|ticket|tickets|pass|demo|quote|meeting)\b/i,
+  /\b(buy|purchase|get)\s+(tickets?|passes?|badges?)\b/i,
+  /\b(exhibit|attend|visit|sponsor)\s+(with\s+us|at\s+|the\s+show|now|here)/i,
+  /\b(plan\s+your\s+visit|why\s+(exhibit|attend|visit)|who\s+(exhibits|attends))\b/i,
+  /\b(sign\s?up|join\s+us|apply\s+(now|to\s+exhibit)|enquire\s+now|contact\s+sales)\b/i,
+  /^\s*(exhibit|attend|visit|register|sponsor|tickets?|badges?)\s*$/i,
+];
+
+/** True when the label is a call to action / navigation chrome, not a company. */
+export function isCtaOrNavLabel(value: string): boolean {
+  const name = cleanCompanyName(value ?? "");
+  if (!name) return true;
+  const lower = name.toLowerCase().replace(/[^a-z0-9& ]+/g, " ").replace(/\s+/g, " ").trim();
+  if (!lower) return true;
+  if (NAV_NOISE.has(lower)) return true;
+  return CTA_NAV_LABEL_RE.some((re) => re.test(name));
+}
+
+/**
+ * Navigation/CTA destinations. Used only to judge whether a *directory link*
+ * should become an exhibitor row — never to filter a company's own website.
+ */
+const NAV_HREF_RE =
+  /\/(visit|visitors?|visiting|register|registration|registrations|signup|sign-?up|sign-?in|login|log-?in|logout|my-?account|account|attend|attendee|attendees|attending|tickets?|ticketing|badge|badges|book-a-stand|book-a-booth|book-your-stand|become-an-exhibitor|exhibit-with-us|why-exhibit|why-attend|sponsorship|sponsor|press|media|contact|careers?|jobs|privacy|terms|cookie|cookies|newsletter|subscribe|search|cart|checkout)(\/|$|[?#])/i;
+
+export function isNavigationHref(href: string | null | undefined): boolean {
+  const url = (href ?? "").trim();
+  if (!url) return false;
+  let pathAndQuery = url;
+  try {
+    const parsed = new URL(url, "https://example.invalid");
+    pathAndQuery = `${parsed.pathname}${parsed.search}${parsed.hash}`;
+  } catch {
+    // relative or malformed — test the raw string below
+  }
+  if (!pathAndQuery.startsWith("/")) pathAndQuery = `/${pathAndQuery}`;
+  if (NAV_HREF_RE.test(pathAndQuery)) return true;
+  return /[?&](register|registration|signup|login|tickets?)=/i.test(pathAndQuery);
+}
+
+/** Rejects a markdown link line whose destination is navigation, not a profile. */
+export function isNavigationLinkLine(line: string): boolean {
+  const link = /!?\[([^\]]*)\]\(([^)\s"]+)/.exec(line);
+  if (!link) return false;
+  if (isNavigationHref(link[2])) return true;
+  return isCtaOrNavLabel(link[1]);
+}
+
 export function isLikelyCompanyName(value: string): boolean {
   const name = cleanCompanyName(value);
   if (name.length < 2 || name.length > 100) return false;
   const lower = name.toLowerCase().replace(/[^a-z0-9& ]+/g, " ").replace(/\s+/g, " ").trim();
   if (!lower) return false;
   if (NAV_NOISE.has(lower)) return false;
+  if (CTA_NAV_LABEL_RE.some((re) => re.test(name))) return false;
   // "Exhibitor List 2026", "2026 Attendees", "Sponsors & Partners"
   if (/^(20\d{2}\s+)?(attendees?|exhibitors?|suppliers?|vendors?|sponsors?|partners?|speakers?|members?|buyers?|visitors?)(\s*(&|and)\s*\w+)?(\s+20\d{2})?(\s+(list|directory|search|index|a\s*z))?$/.test(lower)) {
     return false;
@@ -60,6 +120,7 @@ export function isLikelyCompanyName(value: string): boolean {
   if (HARD_REJECT_RE.some((re) => re.test(name))) return false;
   return /[A-Za-z0-9]/.test(name);
 }
+
 
 /** Account chrome, dates, and UI actions that a company name can never be. */
 const HARD_REJECT_RE: RegExp[] = [
