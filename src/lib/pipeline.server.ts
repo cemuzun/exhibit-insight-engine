@@ -3,8 +3,9 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { createLovableAiGatewayProvider, requireLovableKey } from "./ai-gateway.server";
 import { firecrawlMap, firecrawlScrape, firecrawlSearch } from "./firecrawl.server";
 import { recentCachedScrapesForHost } from "./firecrawl-cache.server";
-import { normalizeCandidateName, parseExhibitorsFromMarkdown } from "./exhibitor-parser";
-import { validateExhibitorRow } from "./exhibitor-validation";
+import { isCtaOrNavLabel, normalizeCandidateName, parseExhibitorsFromMarkdown } from "./exhibitor-parser";
+import { hasCompanyNameStructure, validateExhibitorRow } from "./exhibitor-validation";
+
 import { discoverMapYourShowBase, fetchMapYourShowExhibitors, isMapYourShowUrl } from "./mapyourshow.server";
 
 
