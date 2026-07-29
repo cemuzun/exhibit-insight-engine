@@ -118,9 +118,11 @@ function addExhibitor(out: Map<string, ExhibitorRecord>, exhibitor: ExhibitorRec
   out.set(key, {
     ...exhibitor,
     company_name: company,
-    normalized_company_name: exhibitor.normalized_company_name ?? key,
+    // Dedupe key, never a display string — it must never carry markup.
+    normalized_company_name: key,
   });
 }
+
 
 const LIST_NOISE_RE =
   /^(as of|exhibitors?|exhibitor list|company|booth|page \d+|updated|table of contents|\d{1,4})\b/i;
