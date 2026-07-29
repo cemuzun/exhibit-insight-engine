@@ -233,14 +233,19 @@ export function parseExhibitorsFromPlainList(markdown: string, max = 500): Exhib
   for (const line of lines) {
     if (out.size >= max) break;
     if (/^#/.test(line) || /^\|/.test(line)) continue;
+    // A markdown link pointing at /visit, /register, /login … is page chrome,
+    // never a directory entry — drop it before its label becomes a name.
+    if (isNavigationLinkLine(line)) continue;
     // "Acme Corp .... Booth 123" / "Acme Corp — 1042"
     const boothMatch = /^(.{2,90}?)[\s.\u2026|,–—-]{2,}([A-Z]{0,4}\d[\w.-]{0,8})$/.exec(line);
     const name = cleanCompanyName(boothMatch ? boothMatch[1] : line);
     if (!name || name.length < 3 || name.length > 90) continue;
     if (LIST_NOISE_RE.test(name)) continue;
+    if (isCtaOrNavLabel(name)) continue;
     if (/^[^A-Za-z]*$/.test(name)) continue;
     if (name.split(" ").length > 10) continue;
     if (/[?!]$/.test(name)) continue;
+
     addExhibitor(out, {
       company_name: name,
       normalized_company_name: name,
