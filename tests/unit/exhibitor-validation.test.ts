@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { validateExhibitorRow, looksLikeBoothNumber, hasCompanyNameStructure } from "@/lib/exhibitor-validation";
+import { cleanCompanyName } from "@/lib/exhibitor-parser";
+
 
 const exhibitorPage = `## Exhibitor List 2026
 
