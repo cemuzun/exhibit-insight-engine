@@ -61,7 +61,10 @@ export function looksLikeBoothNumber(value: string | null | undefined): boolean 
 export function hasCompanyNameStructure(value: string): boolean {
   const name = cleanCompanyName(value);
   if (!isLikelyCompanyName(name)) return false;
+  // Shared predicate — the parser and this gate reject identical CTA chrome.
+  if (isCtaOrNavLabel(name)) return false;
   const words = name.split(/\s+/);
+
   // Long legal/association names are real ("ABIMAQ - The Brazilian Association
   // of the Machinery & Equipment Industry"), so only very long strings are prose.
   if (words.length > 16) return false;
