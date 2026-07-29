@@ -260,7 +260,9 @@ export function parseExhibitorsFromPlainList(markdown: string, max = 500): Exhib
     // never a directory entry — drop it before its label becomes a name.
     if (isNavigationLinkLine(line)) continue;
     // "Acme Corp .... Booth 123" / "Acme Corp — 1042"
-    const boothMatch = /^(.{2,90}?)[\s.\u2026|,–—-]{2,}([A-Z]{0,4}\d[\w.-]{0,8})$/.exec(line);
+    const boothMatch =
+      /^(.{2,90}?)[\s.\u2026|,–—-]{2,}(?:booth|stand)?\s*(?:#|no\.?)?\s*([A-Z]{0,4}\d[\w.-]{0,8})$/i.exec(line);
+
     const name = cleanCompanyName(boothMatch ? boothMatch[1] : line);
     if (!name || name.length < 3 || name.length > 90) continue;
     if (LIST_NOISE_RE.test(name)) continue;
