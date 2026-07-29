@@ -203,6 +203,29 @@ export function normalizeCandidateName(
 const LIST_NOISE_RE =
   /^(as of|exhibitors?|exhibitor list|company|booth|page \d+|updated|table of contents|\d{1,4})\b/i;
 
+export function isPdfSource(sourceUrl: string): boolean {
+  return /\.pdf($|[?#])/i.test(sourceUrl ?? "");
+}
+
+const DIRECTORY_URL_RE =
+  /(exhibitor|exhibitors|exhibit-?list|exhibitor-?list|exhibitor-?directory|exhibitor-?search|floor-?plan|expo-?hall|who-?s-?exhibiting|participants)/i;
+
+const DIRECTORY_HEADING_RE =
+  /^#{1,6}\s*.*\b(exhibitor list|exhibitors?|exhibiting companies|participating companies|who'?s exhibiting|expo hall|exhibitor directory)\b/im;
+
+/**
+ * An HTML page only earns the company-per-line fallback when it really reads
+ * like an exhibitor directory — a directory URL, a directory heading, or many
+ * booth/stand numbers on the page.
+ */
+export function hasExhibitorDirectoryContext(markdown: string, sourceUrl: string): boolean {
+  if (DIRECTORY_URL_RE.test(sourceUrl ?? "")) return true;
+  if (DIRECTORY_HEADING_RE.test(markdown ?? "")) return true;
+  const boothMentions = (markdown ?? "").match(/\b(booth|stand)\s*(#|no\.?|number)?\s*[A-Z]{0,4}\d/gi);
+  return (boothMentions?.length ?? 0) >= 5;
+}
+
+
 
 /**
  * PDF exhibitor lists (and simple HTML lists) are just one company per line,
