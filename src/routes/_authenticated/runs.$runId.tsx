@@ -265,16 +265,21 @@ function RunDetail() {
           exhibitor_samples?: ExhibitorSample[];
           exhibitors_found?: number;
         };
-        const samples = c.exhibitor_samples ?? [];
+        // Runs recorded before the name filters were hardened can still hold
+        // page chrome in their stored samples, so re-check at read time.
+        const samples = (c.exhibitor_samples ?? []).filter((s) =>
+          isLikelyCompanyName(s?.company ?? ""),
+        );
         if (typedLeads.length > 0 || samples.length === 0) return null;
         return (
           <LiveExhibitors
-            samples={samples}
+            samples={samples.map((s) => ({ ...s, company: cleanCompanyName(s.company) }))}
             total={c.exhibitors_found ?? samples.length}
             lastUpdated={(run as { updated_at?: string }).updated_at ?? null}
           />
         );
       })()}
+
 
 
       {run.status === "failed" && (
